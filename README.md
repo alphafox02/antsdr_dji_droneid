@@ -1,7 +1,5 @@
 # ANTSDR E200 DJI DroneID Firmware with Network Interface Integration
 
-Welcome to the ANTSDR E200 DJI DroneID Firmware project!
-
 This firmware is designed to enable DJI DroneID detection on the ANTSDR E200 device and seamlessly transmit the results to a network interface and port. With just a few simple steps, users can enhance their ANTSDR E200 capabilities and utilize it as a powerful tool for drone identification and network integration.
 
 ## Features:
