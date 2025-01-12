@@ -1,4 +1,0 @@
-server_ip=192.168.1.10
-server_port=41030
-tak_server_ip=10.185.1.147
-tak_server_port=8087
