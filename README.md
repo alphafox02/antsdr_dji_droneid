@@ -52,4 +52,4 @@ This firmware is designed to enable DJI DroneID detection on the ANTSDR E200 dev
 
 ## Disclaimer:
 
-Please note that the use of this firmware may be subject to regulations and restrictions in your region. Ensure compliance with local laws and regulations regarding wireless communication and drone detection. Also, I did not personally produce this firmware. It was provided by the manufacturer in order ro test the network capabilities. 
+Please note that the use of this firmware may be subject to regulations and restrictions in your region. Ensure compliance with local laws and regulations regarding wireless communication and drone detection. Also, I did not personally produce this firmware. It was provided by the manufacturer in order to test the network capabilities. 
