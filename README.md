@@ -9,6 +9,11 @@ This firmware is designed to enable DJI DroneID detection on the ANTSDR E200 dev
 - **Easy Installation:** Simply copy the contents of the provided zip file to the root directory of an SD card for the ANTSDR E200 device.  
 - **Compatibility with Kismet:** Serve as a capture device for Kismet, allowing users to capture and analyze wireless network data alongside DJI DroneID detection.
 
+## Confirmed Working (still) on:
+
+- DJI Mini 2 01.07.0200 firmware
+- 
+
 ## Usage:
 
 1. **Preparation:**
