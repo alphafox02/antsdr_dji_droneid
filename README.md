@@ -9,15 +9,10 @@ This firmware is designed to enable DJI DroneID detection on the ANTSDR E200 dev
 - **Easy Installation:** Simply copy the contents of the provided zip file to the root directory of an SD card for the ANTSDR E200 device.  
 - **Compatibility with Kismet:** Serve as a capture device for Kismet, allowing users to capture and analyze wireless network data alongside DJI DroneID detection.
 
-## Confirmed Working (still) on:
-
-- DJI Mini 2 01.07.0200 firmware
-- 
-
 ## Usage:
 
 1. **Preparation:**
-   - Configure your LAN port to a static IP of `192.168.1.2`.
+   - Configure your LAN port to a static IP of `192.168.1.9`.
 
 2. **Installation:**
    - Download the provided zip file.
@@ -61,17 +56,20 @@ If you decide to **change the IP address** that the ANTSDR E200 uses when runnin
   - Any **command-line flags** that reference the ANTSDR E200’s IP address (e.g., in Kismet commands).
 
 ### Steps to Change the IP:
-  
-1. **Power on** the device and **SSH** into the **current IP** using:
+
+1. **Power off** the ANTSDR E200.  
+2. **Flip the switch** on the ANTSDR E200 to **QSPI mode**.  
+3. **Power on** the device and **SSH** into the **current IP** using:
    - **Username:** `root`  
-   - **Password:** `abawavearm`  
-2. **Set a new IP** by running the following command (replace `NEW_IP_ADDRESS` with your desired IP):
+   - **Password:** `analog`  
+4. **Set a new IP** by running the following command (replace `NEW_IP_ADDRESS` with your desired IP):
    ```bash
    fw_setenv ipaddr_eth NEW_IP_ADDRESS
-3. Power off the ANTSDR E200.
-4. Power on the device again, and now the DJI firmware will be reachable at the new IP.
+5. Power off the ANTSDR E200.
+6. Flip the switch back to SD mode.
+7. Power on the device again, and now the DJI firmware will be reachable at the new IP.
 
-**Note:** QSPI mode will also switch to the new IP, but changing the IP for UHD-based firmware requires a separate process.
+**Note:** QSPI mode will remain on the new IP firmware, but changing the IP for UHD-based firmware may involve a separate process.
 **Note:** Nightly releases of Kismet are required for integration with the ANTSDR E200 device.
 
 ## Disclaimer:
