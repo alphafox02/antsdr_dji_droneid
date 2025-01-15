@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 dji_receiver.py
+cemaxecuter 2025
 
 Connects to AntSDR, receives DJI DroneID data, converts it to a ZMQ-compatible JSON format,
 and publishes it via an efficient ZMQ XPUB socket.
