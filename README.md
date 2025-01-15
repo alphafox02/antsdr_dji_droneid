@@ -12,7 +12,8 @@ This firmware is designed to enable DJI DroneID detection on the ANTSDR E200 dev
 ## Usage:
 
 1. **Preparation:**
-   - Configure your LAN port to a static IP of `192.168.1.9`.
+   - Configure your host LAN port to a static IP of `192.168.1.9` to reach thr stock ANTSDR firmware at 192.168.1.10.
+   - Firmware for WarDragon Pro requires the host LAN port to be 172.31.100.1 to reach the ANTSDR at 172.31.100.2
 
 2. **Installation:**
    - Download the provided zip file.
