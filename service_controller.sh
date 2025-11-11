@@ -89,7 +89,7 @@ EOF
   chmod +x "$LOCAL_TMP_SCRIPT"
 
   echo "Copying kill script to remote host..."
-  sshpass -p "$PASSWORD" scp $SSH_OPTS "$LOCAL_TMP_SCRIPT" "$USER@$HOST:/tmp/remote_kill.sh"
+  sshpass -p "$PASSWORD" scp -O $SSH_OPTS "$LOCAL_TMP_SCRIPT" "$USER@$HOST:/tmp/remote_kill.sh"
 
   echo "Executing remote kill script..."
   sshpass -p "$PASSWORD" ssh -tt $SSH_OPTS "$USER@$HOST" "sh /tmp/remote_kill.sh; rm /tmp/remote_kill.sh"
