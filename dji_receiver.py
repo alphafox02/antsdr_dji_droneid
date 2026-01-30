@@ -21,6 +21,7 @@ import socket
 import struct
 import json
 import logging
+import math
 import zmq
 import time
 import argparse
@@ -41,6 +42,7 @@ MON_ZMQ_RECV_TIMEOUT_MS = int(os.getenv("WARD_MON_RECV_TIMEOUT_MS", "50"))
 # Fallback/Validation constants
 MAX_HORIZONTAL_SPEED = 200.0        # m/s; above this, treat as invalid
 ALERT_ID = "drone-alert"            # standardized ID when position/serial is unknown
+MAX_DISTANCE_FROM_SENSOR_KM = 50.0  # km; if drone is further than this from sensor, likely garbage
 
 # Cached sensor GPS from the monitor: (lat, lon, alt) or None
 _last_sensor_gps: Optional[Tuple[float, float, float]] = None
@@ -192,6 +194,24 @@ def is_valid_latlon(lat: float, lon: float) -> bool:
     return -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0 and lat != 0.0 and lon != 0.0
 
 
+def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Calculate the great-circle distance between two points on Earth in kilometers.
+    Uses the haversine formula.
+    """
+    R = 6371.0  # Earth's radius in km
+
+    lat1_rad = math.radians(lat1)
+    lat2_rad = math.radians(lat2)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    return R * c
+
+
 def setup_monitor_sub(endpoint: str) -> Optional[zmq.Socket]:
     """
     Create a SUB socket to the WarDragon system monitor (publishes JSON with gps_data).
@@ -258,11 +278,29 @@ def format_as_zmq_json(parsed_data: dict,
 
     # If invalid drone position, try to use the sensor (monitor) GPS
     used_sensor = False
-    if not have_valid_drone_pos and monitor_gps is not None:
+    use_sensor_fallback = False
+
+    if monitor_gps is not None:
         ml, mo, _ = monitor_gps
-        if is_valid_latlon(ml, mo):
+        sensor_valid = is_valid_latlon(ml, mo)
+
+        if not have_valid_drone_pos:
+            # Case 1: Drone position is clearly invalid (out of range or 0,0)
+            use_sensor_fallback = True
+            logging.debug(f"Drone position invalid ({d_lat}, {d_lon}), will use sensor fallback")
+        elif sensor_valid:
+            # Case 2: Drone position looks valid, but check if it's suspiciously far from sensor
+            # Encrypted drones often produce random-but-valid-looking coordinates
+            distance_km = haversine_distance_km(d_lat, d_lon, ml, mo)
+            if distance_km > MAX_DISTANCE_FROM_SENSOR_KM:
+                use_sensor_fallback = True
+                logging.debug(f"Drone position ({d_lat}, {d_lon}) is {distance_km:.1f}km from sensor - likely garbage, using sensor fallback")
+
+        if use_sensor_fallback and sensor_valid:
             d_lat, d_lon = ml, mo
             used_sensor = True
+        elif use_sensor_fallback and not sensor_valid:
+            logging.warning(f"Sensor GPS invalid ({ml}, {mo}) - cannot use as fallback. Check WarDragon GPS on port 4225.")
 
     # Basic ID Message
     basic_id_value = parsed_data.get("serial_number", "unknown")
