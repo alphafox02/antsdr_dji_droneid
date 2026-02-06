@@ -3,17 +3,26 @@
 dji_receiver.py
 cemaxecuter 2025
 
-Connects to AntSDR, receives DJI DroneID data, converts it to a ZMQ-compatible JSON format,
-and publishes it via an efficient ZMQ XPUB socket.
+Connects to AntSDR (legacy firmware) and/or accepts connections from AntSDR
+(new firmware), receives DJI DroneID data, converts it to a ZMQ-compatible
+JSON format, and publishes it via an efficient ZMQ XPUB socket.
+
+Supports two firmware modes simultaneously:
+- Legacy: TCP client connects to AntSDR port 41030 (binary frames)
+- New firmware: TCP server accepts AntSDR connections on configurable port (text CSV)
 
 Usage:
-    python3 dji_receiver.py [--debug]
+    python3 dji_receiver.py [--debug] [--mode legacy|new|dual]
 
 Options:
-    -d, --debug  Enable debug output to console.
+    -d, --debug          Enable debug output to console.
+    --mode MODE          Connection mode: legacy, new, or dual (default: dual)
+    --antsdr-ip IP       AntSDR IP for legacy mode (default: 192.168.1.10)
+    --antsdr-port PORT   AntSDR port for legacy mode (default: 41030)
+    --listen-port PORT   Listen port for new firmware mode (default: 52002)
 
 Default Behavior:
-    - Prints only warnings and errors to the console if --debug is not specified.
+    - Runs in dual mode: legacy TCP client + new firmware TCP server
     - Publishes the processed DJI DroneID data on tcp://0.0.0.0:4221 by default.
 """
 
@@ -26,11 +35,16 @@ import zmq
 import time
 import argparse
 import os
+import re
+import threading
+import queue
 from typing import Optional, Tuple
 
-# Hardcoded configuration
-ANTSDR_IP = "172.31.100.2"
-ANTSDR_PORT = 41030
+# Configuration (overridable via env vars or command-line args)
+ANTSDR_IP = os.getenv("ANTSDR_IP", "172.31.100.2")
+ANTSDR_PORT = int(os.getenv("ANTSDR_PORT", "41030"))
+LISTEN_IP = "0.0.0.0"
+LISTEN_PORT = int(os.getenv("ANTSDR_LISTEN_PORT", "52002"))
 ZMQ_PUB_IP = "127.0.0.1"
 ZMQ_PUB_PORT = 4221  # Port to serve DJI receiver data
 
@@ -46,27 +60,25 @@ MAX_DISTANCE_FROM_SENSOR_KM = 50.0  # km; if drone is further than this from sen
 
 # Cached sensor GPS from the monitor: (lat, lon, alt) or None
 _last_sensor_gps: Optional[Tuple[float, float, float]] = None
+_gps_lock = threading.Lock()
 
 
 def parse_args():
-    """
-    Parses command-line arguments.
-    Returns an object with 'debug' as a boolean.
-    """
     parser = argparse.ArgumentParser(description="DJI Receiver: Publish DJI DroneID data via ZMQ.")
     parser.add_argument("-d", "--debug", action="store_true",
                         help="Enable debug messages and logging output.")
+    parser.add_argument("--mode", choices=["legacy", "new", "dual"], default="dual",
+                        help="Connection mode (default: dual)")
+    parser.add_argument("--antsdr-ip", default=None,
+                        help=f"AntSDR IP for legacy mode (default: {ANTSDR_IP})")
+    parser.add_argument("--antsdr-port", type=int, default=None,
+                        help=f"AntSDR port for legacy mode (default: {ANTSDR_PORT})")
+    parser.add_argument("--listen-port", type=int, default=None,
+                        help=f"Listen port for new firmware mode (default: {LISTEN_PORT})")
     return parser.parse_args()
 
 
 def setup_logging(debug: bool):
-    """
-    Configures logging to console. Debug mode shows more verbose logs,
-    otherwise only warnings and errors.
-
-    Args:
-        debug (bool): If True, set log level to DEBUG. Else, WARNING.
-    """
     log_level = logging.DEBUG if debug else logging.WARNING
     logging.basicConfig(
         level=log_level,
@@ -79,8 +91,12 @@ def iso_timestamp_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S.%fZ", time.gmtime())
 
 
+# ---------------------------------------------------------------------------
+# Legacy binary frame parser (old firmware on port 41030)
+# ---------------------------------------------------------------------------
+
 def parse_frame(frame: bytes):
-    """Parses the raw frame from AntSDR."""
+    """Parses the raw binary frame from legacy AntSDR firmware."""
     try:
         package_type = frame[2]
         package_length = struct.unpack('<H', frame[3:5])[0]
@@ -93,76 +109,56 @@ def parse_frame(frame: bytes):
 
 def parse_data_1(data: bytes) -> dict:
     """
-    Parses data of package type 0x01, applying fallback logic for invalid fields.
+    Parses data of package type 0x01 from legacy firmware binary format.
     Returns a dictionary with the fields needed to build a ZMQ-compatible JSON structure.
     """
     try:
-        # Decode strings
         serial_number = data[:64].decode('utf-8', errors='replace').rstrip('\x00')
         device_type   = data[64:128].decode('utf-8', errors='replace').rstrip('\x00')
 
-        # Pilot home lat/lon
         app_lat = struct.unpack('<d', data[129:137])[0]
         app_lon = struct.unpack('<d', data[137:145])[0]
 
-        # Drone lat/lon
         drone_lat = struct.unpack('<d', data[145:153])[0]
         drone_lon = struct.unpack('<d', data[153:161])[0]
 
-        # Height and altitude
         height_agl        = struct.unpack('<d', data[161:169])[0]
         geodetic_altitude = struct.unpack('<d', data[169:177])[0]
 
-        # Home lat/lon (Return-to-home position)
         home_lat = struct.unpack('<d', data[177:185])[0]
         home_lon = struct.unpack('<d', data[185:193])[0]
 
-        # Frequency (New field)
-        freq = struct.unpack('<d', data[193:201])[0]  # Frequency value
+        freq = struct.unpack('<d', data[193:201])[0]
 
-        # Speeds
-        speed_e = struct.unpack('<d', data[201:209])[0]  # East
-        speed_n = struct.unpack('<d', data[209:217])[0]  # North
-        speed_u = struct.unpack('<d', data[217:225])[0]  # Vertical
+        speed_e = struct.unpack('<d', data[201:209])[0]
+        speed_n = struct.unpack('<d', data[209:217])[0]
+        speed_u = struct.unpack('<d', data[217:225])[0]
 
-        # RSSI
         rssi = struct.unpack('<h', data[225:227])[0]
 
-        # Compute horizontal speed from east/north components
         horizontal_speed = (speed_e**2 + speed_n**2)**0.5
 
-        # ------------------------------------------------
-        # Fallback logic for invalid or nonsensical values
-        # ------------------------------------------------
-
-        # 1) Serial: if blank/bogus, mark as alert (explicitly convey unknown)
         if len(serial_number.strip()) < 5:
             logging.debug("Serial number invalid/blank; marking as drone-alert.")
             serial_number = ALERT_ID
 
-        # 2) Drone lat/lon fallback if out of valid range -> keep as-is here;
-        #    we'll decide later whether to use sensor GPS for placement.
         if not (-90.0 <= drone_lat <= 90.0) or not (-180.0 <= drone_lon <= 180.0):
             logging.debug(f"Drone lat/lon out of range ({drone_lat}, {drone_lon}).")
 
-        # 3) Pilot lat/lon fallback if out of valid range -> clamp to 0 for invalid
         if not (-90.0 <= app_lat <= 90.0) or not (-180.0 <= app_lon <= 180.0):
             logging.debug(f"Pilot lat/lon out of range ({app_lat}, {app_lon}); falling back to 0.0.")
             app_lat = 0.0
             app_lon = 0.0
 
-        # 4) Home lat/lon fallback if out of valid range -> clamp to 0 for invalid
         if not (-90.0 <= home_lat <= 90.0) or not (-180.0 <= home_lon <= 180.0):
             logging.debug(f"Home lat/lon out of range ({home_lat}, {home_lon}); falling back to 0.0.")
             home_lat = 0.0
             home_lon = 0.0
 
-        # 5) Unrealistic speed fallback
         if horizontal_speed > MAX_HORIZONTAL_SPEED:
             logging.debug(f"Horizontal speed {horizontal_speed} m/s above max; resetting to 0.0.")
             horizontal_speed = 0.0
 
-        # Return the dictionary (with invalid fields replaced by safe defaults where applicable)
         return {
             "serial_number": serial_number,
             "device_type": device_type,
@@ -177,50 +173,140 @@ def parse_data_1(data: bytes) -> dict:
             "rssi": rssi,
             "home_lat": home_lat,
             "home_lon": home_lon,
-            "freq": freq  # Keep frequency field
+            "freq": freq
         }
 
     except (UnicodeDecodeError, struct.error) as e:
-        logging.error(f"Error parsing data: {e}")
-        # In case of outright parse failure, return empty to skip
+        logging.error(f"Error parsing legacy data: {e}")
         return {}
 
 
+# ---------------------------------------------------------------------------
+# New firmware text line parser (dji_O,... CSV format)
+# ---------------------------------------------------------------------------
+
+def parse_new_fw_line(line: str) -> dict:
+    """
+    Parse a dji_O,... text line from the new firmware (drone_dji_rid_decode).
+    Returns same dict structure as parse_data_1() for unified downstream handling.
+    """
+    line = line.strip()
+    if not line.startswith('dji_O,'):
+        return {}
+
+    # Strip trailing semicolons and trailing comma before semicolon
+    line = line.rstrip(';').rstrip(',').rstrip(';')
+
+    parts = line.split(',')
+    if len(parts) < 14:
+        logging.debug(f"New FW line too few fields ({len(parts)}): {line[:80]}")
+        return {}
+
+    try:
+        protocol = parts[1]
+        freq = float(parts[2])
+        rssi = int(parts[3])
+        id_field = parts[4]
+        model = parts[5]
+
+        drone_lat = float(parts[6])
+        drone_lon = float(parts[7])
+        pilot_lat = float(parts[8])
+        pilot_lon = float(parts[9])
+        home_lat = float(parts[10])
+        home_lon = float(parts[11])
+
+        height_parts = parts[12].split('|')
+        geodetic_altitude = float(height_parts[0]) * 10.0
+        height_agl = float(height_parts[1]) if len(height_parts) > 1 else 0.0
+
+        speed_parts = parts[13].split('|')
+        speed_e = float(speed_parts[0])
+        speed_n = float(speed_parts[1]) if len(speed_parts) > 1 else 0.0
+        speed_u = float(speed_parts[2]) if len(speed_parts) > 2 else 0.0
+        horizontal_speed = ((speed_e ** 2 + speed_n ** 2) ** 0.5) / 100.0
+        vertical_speed = speed_u / 100.0
+
+    except (ValueError, IndexError) as e:
+        logging.debug(f"New FW parse error: {e} in line: {line[:80]}")
+        return {}
+
+    id_match = re.match(r'^(.+?)\((.+)\)$', id_field)
+    if id_match:
+        id_prefix = id_match.group(1)
+        id_inner = id_match.group(2)
+    else:
+        id_prefix = id_field
+        id_inner = ""
+
+    if protocol == "4":
+        # O4 encrypted drone: use hash as unique identifier
+        serial_number = f"drone-alert-{id_inner}" if id_inner else ALERT_ID
+        device_type = model if model else "DJI Encrypted (O4)"
+    else:
+        # O2/O3 decoded drone: id_prefix is the serial number
+        serial_number = id_prefix if len(id_prefix.strip()) >= 5 else ALERT_ID
+        device_type = model if model else "DJI Drone"
+
+    # Apply same validation as legacy parser
+    if not (-90.0 <= drone_lat <= 90.0) or not (-180.0 <= drone_lon <= 180.0):
+        logging.debug(f"Drone lat/lon out of range ({drone_lat}, {drone_lon}).")
+
+    if not (-90.0 <= pilot_lat <= 90.0) or not (-180.0 <= pilot_lon <= 180.0):
+        pilot_lat = 0.0
+        pilot_lon = 0.0
+
+    if not (-90.0 <= home_lat <= 90.0) or not (-180.0 <= home_lon <= 180.0):
+        home_lat = 0.0
+        home_lon = 0.0
+
+    if horizontal_speed > MAX_HORIZONTAL_SPEED:
+        horizontal_speed = 0.0
+
+    return {
+        "serial_number": serial_number,
+        "device_type": device_type,
+        "app_lat": pilot_lat,
+        "app_lon": pilot_lon,
+        "drone_lat": drone_lat,
+        "drone_lon": drone_lon,
+        "height_agl": height_agl,
+        "geodetic_altitude": geodetic_altitude,
+        "horizontal_speed": horizontal_speed,
+        "vertical_speed": vertical_speed,
+        "rssi": rssi,
+        "home_lat": home_lat,
+        "home_lon": home_lon,
+        "freq": freq
+    }
+
+
+# ---------------------------------------------------------------------------
+# Common helpers (unchanged)
+# ---------------------------------------------------------------------------
+
 def is_valid_latlon(lat: float, lon: float) -> bool:
-    """
-    Check if latitude and longitude are within valid ranges
-    AND not exactly zero. Used for deciding if we publish a "System Message."
-    """
+    """Check if latitude and longitude are within valid ranges AND not exactly zero."""
     return -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0 and lat != 0.0 and lon != 0.0
 
 
 def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """
-    Calculate the great-circle distance between two points on Earth in kilometers.
-    Uses the haversine formula.
-    """
-    R = 6371.0  # Earth's radius in km
-
+    R = 6371.0
     lat1_rad = math.radians(lat1)
     lat2_rad = math.radians(lat2)
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-
     a = math.sin(dlat / 2) ** 2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2) ** 2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
     return R * c
 
 
 def setup_monitor_sub(endpoint: str) -> Optional[zmq.Socket]:
-    """
-    Create a SUB socket to the WarDragon system monitor (publishes JSON with gps_data).
-    Returns a connected SUB socket or None on failure.
-    """
+    """Create a SUB socket to the WarDragon system monitor (publishes JSON with gps_data)."""
     try:
         ctx = zmq.Context.instance()
         sub = ctx.socket(zmq.SUB)
-        sub.setsockopt(zmq.SUBSCRIBE, b"")  # subscribe to all
+        sub.setsockopt(zmq.SUBSCRIBE, b"")
         sub.setsockopt(zmq.RCVTIMEO, MON_ZMQ_RECV_TIMEOUT_MS)
         sub.connect(endpoint)
         return sub
@@ -230,15 +316,11 @@ def setup_monitor_sub(endpoint: str) -> Optional[zmq.Socket]:
 
 
 def poll_monitor_for_gps(sub_sock: Optional[zmq.Socket]) -> None:
-    """
-    Non-blocking poll of the monitor socket. If a valid GPS arrives, update cache.
-    Expects each message to be a JSON string with 'gps_data' having latitude/longitude.
-    """
+    """Non-blocking poll of the monitor socket. If a valid GPS arrives, update cache."""
     global _last_sensor_gps
     if not sub_sock:
         return
     try:
-        # Drain a few messages quickly to keep fresh
         for _ in range(5):
             msg = sub_sock.recv_string(flags=zmq.NOBLOCK)
             try:
@@ -249,34 +331,37 @@ def poll_monitor_for_gps(sub_sock: Optional[zmq.Socket]) -> None:
                 alt = gpsd.get("altitude")
                 if isinstance(lat, (int, float)) and isinstance(lon, (int, float)) \
                    and -90.0 <= float(lat) <= 90.0 and -180.0 <= float(lon) <= 180.0:
-                    _last_sensor_gps = (float(lat), float(lon), float(alt) if isinstance(alt, (int, float)) else 0.0)
+                    with _gps_lock:
+                        _last_sensor_gps = (float(lat), float(lon), float(alt) if isinstance(alt, (int, float)) else 0.0)
             except Exception:
                 continue
     except zmq.Again:
-        # no new data this cycle
         pass
     except Exception as e:
         logging.debug(f"Monitor ZMQ recv failed: {e}")
+
+
+def get_sensor_gps() -> Optional[Tuple[float, float, float]]:
+    """Thread-safe read of cached sensor GPS."""
+    with _gps_lock:
+        return _last_sensor_gps
 
 
 def format_as_zmq_json(parsed_data: dict,
                        monitor_gps: Optional[Tuple[float, float, float]] = None) -> list:
     """
     Formats the parsed data into a ZMQ-compatible list of messages.
-    If drone position is invalid and monitor GPS is available, place marker at sensor GPS
-    and set the Basic ID to 'drone-alert'. No extra fields are added.
+    Works identically for legacy binary and new firmware text input.
     """
     if not parsed_data:
         return []
 
     message_list = []
 
-    # Decide which position to use for the drone marker
     d_lat = parsed_data["drone_lat"]
     d_lon = parsed_data["drone_lon"]
     have_valid_drone_pos = is_valid_latlon(d_lat, d_lon)
 
-    # If invalid drone position, try to use the sensor (monitor) GPS
     used_sensor = False
     use_sensor_fallback = False
 
@@ -285,12 +370,9 @@ def format_as_zmq_json(parsed_data: dict,
         sensor_valid = is_valid_latlon(ml, mo)
 
         if not have_valid_drone_pos:
-            # Case 1: Drone position is clearly invalid (out of range or 0,0)
             use_sensor_fallback = True
             logging.debug(f"Drone position invalid ({d_lat}, {d_lon}), will use sensor fallback")
         elif sensor_valid:
-            # Case 2: Drone position looks valid, but check if it's suspiciously far from sensor
-            # Encrypted drones often produce random-but-valid-looking coordinates
             distance_km = haversine_distance_km(d_lat, d_lon, ml, mo)
             if distance_km > MAX_DISTANCE_FROM_SENSOR_KM:
                 use_sensor_fallback = True
@@ -302,10 +384,10 @@ def format_as_zmq_json(parsed_data: dict,
         elif use_sensor_fallback and not sensor_valid:
             logging.warning(f"Sensor GPS invalid ({ml}, {mo}) - cannot use as fallback. Check WarDragon GPS on port 4225.")
 
-    # Basic ID Message
+    # Basic ID Message — preserve drone-alert-{hash} for O4 encrypted drones
     basic_id_value = parsed_data.get("serial_number", "unknown")
-    if used_sensor:
-        # Force a clear, consistent alert label when we used sensor position
+    if used_sensor and not basic_id_value.startswith("drone-alert-"):
+        # Only override to generic alert if it's not already an O4 hash ID
         basic_id_value = ALERT_ID
 
     basic_id_message = {
@@ -318,7 +400,6 @@ def format_as_zmq_json(parsed_data: dict,
     }
     message_list.append(basic_id_message)
 
-    # Location/Vector Message (no extra keys added)
     location_vector_message = {
         "Location/Vector Message": {
             "latitude": d_lat,
@@ -331,14 +412,11 @@ def format_as_zmq_json(parsed_data: dict,
     }
     message_list.append(location_vector_message)
 
-    # Self-ID Message
     self_id_text = parsed_data.get("device_type", "DJI Drone")
     if used_sensor:
-        # Keep text conservative to avoid parser breaks
         self_id_text += " (alert)"
     message_list.append({"Self-ID Message": {"text": self_id_text}})
 
-    # System Message (pilot/home if valid)
     has_valid_pilot = is_valid_latlon(parsed_data["app_lat"], parsed_data["app_lon"])
     has_valid_home  = is_valid_latlon(parsed_data["home_lat"], parsed_data["home_lon"])
     if has_valid_pilot or has_valid_home:
@@ -352,21 +430,12 @@ def format_as_zmq_json(parsed_data: dict,
         if sysmsg:
             message_list.append({"System Message": sysmsg})
 
-    # Frequency Message (unchanged)
     message_list.append({"Frequency Message": {"frequency": parsed_data.get("freq", None)}})
 
     return message_list
 
 
 def send_zmq_message(zmq_pub_socket: zmq.Socket, message_list: list):
-    """
-    Sends the ZMQ JSON-formatted message.
-    Logs debug info if in debug mode.
-
-    Args:
-        zmq_pub_socket (zmq.Socket): The XPUB socket to publish to.
-        message_list (list): The list of message dictionaries to convert to JSON.
-    """
     try:
         json_message = json.dumps(message_list)
         zmq_pub_socket.send_string(json_message)
@@ -375,63 +444,189 @@ def send_zmq_message(zmq_pub_socket: zmq.Socket, message_list: list):
         logging.error(f"Failed to send JSON via ZMQ: {e}")
 
 
-def tcp_client():
+# ---------------------------------------------------------------------------
+# Legacy TCP client thread (old firmware, connects TO AntSDR on port 41030)
+# ---------------------------------------------------------------------------
+
+def legacy_tcp_client(data_queue: queue.Queue, antsdr_ip: str, antsdr_port: int):
     """
-    Connects to AntSDR via TCP, receives raw frames, parses them,
-    and publishes the result as a ZMQ XPUB stream on the configured IP/Port.
-    Also subscribes (non-blocking) to the WarDragon monitor ZMQ to cache sensor GPS.
+    Connects to AntSDR via TCP (legacy firmware), receives binary frames,
+    parses them, and puts parsed dicts into the shared queue.
     """
+    logging.info(f"[Legacy] Starting TCP client to {antsdr_ip}:{antsdr_port}")
+
+    while True:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+                client_socket.settimeout(10)
+                client_socket.connect((antsdr_ip, antsdr_port))
+                client_socket.settimeout(60)  # detect dead connections
+                logging.info(f"[Legacy] Connected to AntSDR at {antsdr_ip}:{antsdr_port}")
+
+                while True:
+                    frame = client_socket.recv(1024)
+                    if not frame:
+                        logging.warning("[Legacy] Connection closed by AntSDR.")
+                        break
+
+                    package_type, data = parse_frame(frame)
+                    if package_type == 0x01 and data:
+                        parsed_data = parse_data_1(data)
+                        if parsed_data:
+                            data_queue.put(parsed_data)
+
+        except socket.timeout:
+            logging.warning("[Legacy] Connection timed out (no data for 60s). Reconnecting...")
+        except (ConnectionRefusedError, socket.error, OSError) as e:
+            logging.debug(f"[Legacy] Connection error: {e}. Retrying in 5 seconds...")
+            time.sleep(5)
+        except Exception as e:
+            logging.error(f"[Legacy] Unexpected error: {e}. Retrying in 5 seconds...")
+            time.sleep(5)
+
+
+# ---------------------------------------------------------------------------
+# New firmware TCP server thread (accepts connections from AntSDR)
+# ---------------------------------------------------------------------------
+
+def new_fw_connection_handler(conn: socket.socket, addr, data_queue: queue.Queue):
+    """Handle a single connection from a new-firmware AntSDR."""
+    logging.info(f"[NewFW] Connection from {addr}")
+    conn.settimeout(90)  # heartbeat is every 30s; 90s covers 3 missed beats
+    buf = ""
+
+    try:
+        while True:
+            chunk = conn.recv(4096)
+            if not chunk:
+                logging.warning(f"[NewFW] Connection closed by {addr}")
+                break
+
+            buf += chunk.decode('utf-8', errors='replace')
+
+            # Process complete lines
+            while '\n' in buf:
+                line, buf = buf.split('\n', 1)
+                line = line.strip()
+                if not line or line == '=':
+                    continue
+
+                # Only parse dji_O lines, skip debug output (ppm, decode success, etc.)
+                if line.startswith('dji_O,'):
+                    parsed_data = parse_new_fw_line(line)
+                    if parsed_data:
+                        data_queue.put(parsed_data)
+                        logging.debug(f"[NewFW] Parsed: {parsed_data.get('serial_number')} "
+                                      f"freq={parsed_data.get('freq')} rssi={parsed_data.get('rssi')}")
+
+    except socket.timeout:
+        logging.warning(f"[NewFW] Connection from {addr} timed out (no data for 90s)")
+    except (ConnectionResetError, BrokenPipeError, OSError) as e:
+        logging.debug(f"[NewFW] Connection error from {addr}: {e}")
+    except Exception as e:
+        logging.error(f"[NewFW] Unexpected error from {addr}: {e}")
+    finally:
+        conn.close()
+        logging.info(f"[NewFW] Disconnected: {addr}")
+
+
+def new_fw_tcp_server(data_queue: queue.Queue, listen_port: int):
+    """
+    TCP server that accepts connections from new-firmware AntSDR daemons.
+    Each connection is handled in its own thread to support multiple AntSDRs.
+    """
+    logging.info(f"[NewFW] Starting TCP server on {LISTEN_IP}:{listen_port}")
+
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind((LISTEN_IP, listen_port))
+    srv.listen(5)
+    logging.info(f"[NewFW] Listening on {LISTEN_IP}:{listen_port}")
+
+    while True:
+        try:
+            conn, addr = srv.accept()
+            t = threading.Thread(target=new_fw_connection_handler,
+                                 args=(conn, addr, data_queue),
+                                 daemon=True)
+            t.start()
+        except Exception as e:
+            logging.error(f"[NewFW] Accept error: {e}")
+            time.sleep(1)
+
+
+# ---------------------------------------------------------------------------
+# Main publisher loop
+# ---------------------------------------------------------------------------
+
+def main():
+    args = parse_args()
+    setup_logging(args.debug)
+
+    # Apply CLI overrides
+    antsdr_ip = args.antsdr_ip or ANTSDR_IP
+    antsdr_port = args.antsdr_port or ANTSDR_PORT
+    listen_port = args.listen_port or LISTEN_PORT
+
+    # ZMQ publisher (main thread only)
     context = zmq.Context()
-    zmq_pub_socket = context.socket(zmq.XPUB)  # XPUB for efficient subscriptions
+    zmq_pub_socket = context.socket(zmq.XPUB)
     zmq_pub_socket.bind(f"tcp://{ZMQ_PUB_IP}:{ZMQ_PUB_PORT}")
     logging.info(f"ZMQ XPUB socket bound to tcp://{ZMQ_PUB_IP}:{ZMQ_PUB_PORT}")
 
-    # Connect to WarDragon monitor for GPS
+    # Monitor subscription for sensor GPS
     mon_sub = setup_monitor_sub(MON_ZMQ_ENDPOINT)
     if mon_sub:
         logging.info(f"Subscribed to WarDragon monitor at {MON_ZMQ_ENDPOINT}")
     else:
         logging.warning(f"Could not subscribe to WarDragon monitor at {MON_ZMQ_ENDPOINT}. Proceeding without sensor GPS.")
 
+    # Shared queue: both TCP handlers put parsed dicts here
+    data_queue = queue.Queue()
+
+    # Start connection threads based on mode
+    if args.mode in ("legacy", "dual"):
+        t_legacy = threading.Thread(target=legacy_tcp_client,
+                                    args=(data_queue, antsdr_ip, antsdr_port),
+                                    daemon=True)
+        t_legacy.start()
+        logging.info(f"[Legacy] Thread started -> {antsdr_ip}:{antsdr_port}")
+
+    if args.mode in ("new", "dual"):
+        t_new = threading.Thread(target=new_fw_tcp_server,
+                                 args=(data_queue, listen_port),
+                                 daemon=True)
+        t_new.start()
+        logging.info(f"[NewFW] Thread started <- listening on {listen_port}")
+
+    # Main loop: consume queue, poll GPS, publish ZMQ
+    logging.info(f"Running in '{args.mode}' mode. Waiting for drone data...")
+
     while True:
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-                client_socket.connect((ANTSDR_IP, ANTSDR_PORT))
-                logging.info(f"Connected to AntSDR at {ANTSDR_IP}:{ANTSDR_PORT}")
+            # Poll monitor for fresh sensor GPS
+            poll_monitor_for_gps(mon_sub)
 
-                while True:
-                    # Opportunistically poll monitor for fresh GPS
-                    poll_monitor_for_gps(mon_sub)
+            # Block up to 100ms for next parsed drone data
+            try:
+                parsed_data = data_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
 
-                    frame = client_socket.recv(1024)
-                    if not frame:
-                        logging.warning("Connection closed by AntSDR.")
-                        break
+            # Format and publish
+            zmq_message_list = format_as_zmq_json(
+                parsed_data,
+                monitor_gps=get_sensor_gps()
+            )
+            if zmq_message_list:
+                send_zmq_message(zmq_pub_socket, zmq_message_list)
 
-                    package_type, data = parse_frame(frame)
-                    if package_type == 0x01 and data:
-                        parsed_data = parse_data_1(data)
-                        zmq_message_list = format_as_zmq_json(
-                            parsed_data,
-                            monitor_gps=_last_sensor_gps
-                        )
-                        if zmq_message_list:
-                            send_zmq_message(zmq_pub_socket, zmq_message_list)
-
-        except (ConnectionRefusedError, socket.error) as e:
-            logging.error(f"Connection error: {e}. Retrying in 5 seconds...")
-            time.sleep(5)
-            continue
+        except KeyboardInterrupt:
+            logging.info("Shutting down.")
+            break
         except Exception as e:
-            logging.error(f"Unexpected error: {e}. Retrying in 5 seconds...")
-            time.sleep(5)
-            continue
-
-
-def main():
-    args = parse_args()
-    setup_logging(args.debug)
-    tcp_client()
+            logging.error(f"Publisher error: {e}")
+            time.sleep(1)
 
 
 if __name__ == "__main__":
