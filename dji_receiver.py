@@ -206,15 +206,15 @@ def parse_new_fw_line(line: str) -> dict:
         protocol = parts[1]
         freq = float(parts[2])
         rssi = int(parts[3])
-        id_field = parts[4]
-        model = parts[5]
+        field4 = parts[4]
+        field5 = parts[5]
 
-        drone_lat = float(parts[6])
-        drone_lon = float(parts[7])
-        pilot_lat = float(parts[8])
-        pilot_lon = float(parts[9])
-        home_lat = float(parts[10])
-        home_lon = float(parts[11])
+        drone_lon = float(parts[6])
+        drone_lat = float(parts[7])
+        pilot_lon = float(parts[8])
+        pilot_lat = float(parts[9])
+        home_lon = float(parts[10])
+        home_lat = float(parts[11])
 
         height_parts = parts[12].split('|')
         geodetic_altitude = float(height_parts[0]) * 10.0
@@ -231,22 +231,25 @@ def parse_new_fw_line(line: str) -> dict:
         logging.debug(f"New FW parse error: {e} in line: {line[:80]}")
         return {}
 
-    id_match = re.match(r'^(.+?)\((.+)\)$', id_field)
-    if id_match:
-        id_prefix = id_match.group(1)
-        id_inner = id_match.group(2)
+    # Parse field4 which always has parenthesized data:
+    #   O2/O3: "DJI Mini 2(63)" — model name + type code
+    #   O4:    "dji(15529374)"   — prefix + encrypted hash
+    f4_match = re.match(r'^(.+?)\((.+)\)$', field4)
+    if f4_match:
+        f4_name = f4_match.group(1)
+        f4_inner = f4_match.group(2)
     else:
-        id_prefix = id_field
-        id_inner = ""
+        f4_name = field4
+        f4_inner = ""
 
     if protocol == "4":
-        # O4 encrypted drone: use hash as unique identifier
-        serial_number = f"drone-alert-{id_inner}" if id_inner else ALERT_ID
-        device_type = model if model else "DJI Encrypted (O4)"
+        # O4 encrypted drone: hash is in field4 parens, field5 is empty
+        serial_number = f"drone-alert-{f4_inner}" if f4_inner else ALERT_ID
+        device_type = "DJI Encrypted (O4)"
     else:
-        # O2/O3 decoded drone: id_prefix is the serial number
-        serial_number = id_prefix if len(id_prefix.strip()) >= 5 else ALERT_ID
-        device_type = model if model else "DJI Drone"
+        # O2/O3 decoded drone: field5 is the serial, field4 name is the model
+        serial_number = field5 if len(field5.strip()) >= 5 else ALERT_ID
+        device_type = f4_name if f4_name else "DJI Drone"
 
     # Apply same validation as legacy parser
     if not (-90.0 <= drone_lat <= 90.0) or not (-180.0 <= drone_lon <= 180.0):
