@@ -78,7 +78,7 @@ AntSDR E200 → dji_receiver.py (:4221 ZMQ) → zmq_decoder.py (:4224 ZMQ) → D
 kismet_cap_antsdr_droneid --source antsdr-droneid:host=<ANTSDR_IP>,port=41030 --connect localhost:3501 --tcp
 ```
 
-Requires nightly Kismet builds. Only works with legacy firmware (port 41030).
+Requires nightly Kismet builds. **Only works with legacy firmware** — the Kismet capture source (`kismet_cap_antsdr_droneid`) expects the legacy binary frame protocol on port 41030. The new firmware (`drone_dji_rid_decode`) uses a different text CSV protocol over a reversed TCP connection, which the Kismet capture source does not currently support.
 
 ## Firmware Versions
 
@@ -103,7 +103,7 @@ Position data is encrypted and not available without a decryption API.
 
 **Important:** DJI drones only broadcast DroneID when motors are spinning. Power-on alone only activates the OcuSync control link.
 
-## Service Management (Legacy Firmware)
+## Service Management
 
 ```bash
 # Stop the drone detection daemon on the AntSDR
@@ -112,6 +112,8 @@ Position data is encrypted and not available without a decryption API.
 # Start it again
 ./service_controller.sh start
 ```
+
+The script auto-detects old vs new firmware and stops/starts the correct processes. On both firmware versions, the init chain is `S55drone` → `droneangle.sh` → daemon binary. The watchdog in `droneangle.sh` respawns the daemon every second, so all three processes must be killed for a clean stop.
 
 ## Changing the AntSDR E200 IP Address
 
