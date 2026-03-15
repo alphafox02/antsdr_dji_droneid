@@ -22,13 +22,28 @@ Supports both legacy and new AntSDR firmware, including **O4 encrypted drone det
 
 ### 2. AntSDR Configuration (New Firmware)
 
-SSH into the AntSDR and set the TCP destination:
+For a new AntSDR, flip the boot switch to **QSPI mode**, power on, and SSH in as `root`/`analog`. Then copy-paste:
 
 ```bash
-fw_setenv tcp_serverip <YOUR_HOST_IP>
+fw_setenv ipaddr_eth 172.31.100.2
+fw_setenv tcp_serverip 172.31.100.1
 fw_setenv tcp_serverport 52002
+fw_setenv gain_mode fast_attack
 reboot
 ```
+
+Then power off, flip back to **SD mode**, and power on.
+
+| Variable | Value | Description |
+|----------|-------|-------------|
+| `ipaddr_eth` | `172.31.100.2` | AntSDR IP address |
+| `tcp_serverip` | `172.31.100.1` | Your host/WarDragon IP (where `dji_receiver.py` runs) |
+| `tcp_serverport` | `52002` | TCP port (must match `--listen-port`) |
+| `gain_mode` | `fast_attack` | AD9361 AGC mode for drone detection |
+
+Once booted with the new firmware (SD mode), SSH access is `root`/`1`.
+
+**Note:** The firmware defaults to `192.168.1.10` if `ipaddr_eth` is not set. All other variables above have no defaults and must be configured per device.
 
 ### 3. Run the Receiver
 

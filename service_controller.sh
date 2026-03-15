@@ -39,30 +39,36 @@ ACTION="$1"
 
 # SSH options: bypass host key checking and do not update the known_hosts file.
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5"
+VERBOSE="${FPV_DJI_GUARD_VERBOSE:-0}"
+
+log() {
+  if [ "$VERBOSE" = "1" ]; then
+    echo "$@"
+  fi
+}
 
 # Detect which firmware is running by trying each password.
 detect_firmware() {
-  echo "Detecting firmware version on $HOST..."
+  log "Detecting firmware version on $HOST..."
 
   # Try old firmware password first
-  if sshpass -p "$OLD_PASSWORD" ssh $SSH_OPTS "$USER@$HOST" "true" 2>/dev/null; then
+  if sshpass -p "$OLD_PASSWORD" ssh -T $SSH_OPTS "$USER@$HOST" "true" 2>/dev/null; then
     PASSWORD="$OLD_PASSWORD"
     FIRMWARE="old"
-    echo "Detected: Old firmware (password: abawavearm)"
+    log "Detected: Old firmware (password: abawavearm)"
     return 0
   fi
 
   # Try new firmware password
-  if sshpass -p "$NEW_PASSWORD" ssh $SSH_OPTS "$USER@$HOST" "true" 2>/dev/null; then
+  if sshpass -p "$NEW_PASSWORD" ssh -T $SSH_OPTS "$USER@$HOST" "true" 2>/dev/null; then
     PASSWORD="$NEW_PASSWORD"
     FIRMWARE="new"
-    echo "Detected: New firmware (password: 1, dropbear)"
+    log "Detected: New firmware (password: 1, dropbear)"
     return 0
   fi
 
-  echo "ERROR: Could not connect to $HOST with either password."
-  echo "Check that the AntSDR is powered on and reachable."
-  exit 1
+  log "ERROR: Could not connect to $HOST with either password."
+  return 1
 }
 
 # Function: Stop the service by killing target processes.
@@ -145,37 +151,49 @@ EOF
 
   chmod +x "$LOCAL_TMP_SCRIPT"
 
-  echo "Copying kill script to remote host..."
-  sshpass -p "$PASSWORD" scp -O $SSH_OPTS "$LOCAL_TMP_SCRIPT" "$USER@$HOST:/tmp/remote_kill.sh"
+  log "Copying kill script to remote host..."
+  if [ "$VERBOSE" = "1" ]; then
+    sshpass -p "$PASSWORD" scp -O $SSH_OPTS "$LOCAL_TMP_SCRIPT" "$USER@$HOST:/tmp/remote_kill.sh"
+  else
+    sshpass -p "$PASSWORD" scp -O -q $SSH_OPTS "$LOCAL_TMP_SCRIPT" "$USER@$HOST:/tmp/remote_kill.sh" >/dev/null 2>&1
+  fi
 
-  echo "Executing remote kill script..."
-  sshpass -p "$PASSWORD" ssh -tt $SSH_OPTS "$USER@$HOST" "sh /tmp/remote_kill.sh; rm /tmp/remote_kill.sh"
+  log "Executing remote kill script..."
+  if [ "$VERBOSE" = "1" ]; then
+    sshpass -p "$PASSWORD" ssh -tt $SSH_OPTS "$USER@$HOST" "sh /tmp/remote_kill.sh; rm /tmp/remote_kill.sh"
+  else
+    # Use -T (no tty) instead of -tt when running from service (no terminal available)
+    sshpass -p "$PASSWORD" ssh -T -q $SSH_OPTS "$USER@$HOST" "sh /tmp/remote_kill.sh; rm /tmp/remote_kill.sh" >/dev/null 2>&1
+  fi
 
   rm "$LOCAL_TMP_SCRIPT"
-  echo "Remote kill script executed."
+  log "Remote kill script executed."
 }
 
-# Function: Start the service.
+# Function: Start the service using the remote init script, detached from the session.
 start_service() {
   if [ "$FIRMWARE" = "old" ]; then
-    echo "Starting Drone Daemon on remote host (old firmware)..."
+    log "Starting Drone Daemon on remote host (old firmware)..."
+  else
+    log "Starting drone_dji_rid_decode on remote host (new firmware)..."
+  fi
+  if [ "$VERBOSE" = "1" ]; then
     sshpass -p "$PASSWORD" ssh $SSH_OPTS "$USER@$HOST" "nohup /etc/init.d/S55drone start > /dev/null 2>&1 &"
   else
-    echo "Starting drone_dji_rid_decode on remote host (new firmware)..."
-    sshpass -p "$PASSWORD" ssh $SSH_OPTS "$USER@$HOST" "nohup /etc/init.d/S55drone start > /dev/null 2>&1 &"
+    sshpass -p "$PASSWORD" ssh -q $SSH_OPTS "$USER@$HOST" "nohup /etc/init.d/S55drone start > /dev/null 2>&1 &" >/dev/null 2>&1
   fi
 }
 
 # Detect firmware, then execute action.
-detect_firmware
+detect_firmware || exit 1
 
 case "$ACTION" in
   stop)
-    echo "Executing stop command..."
+    log "Executing stop command..."
     stop_service
     ;;
   start)
-    echo "Executing start command..."
+    log "Executing start command..."
     start_service
     ;;
   *)
