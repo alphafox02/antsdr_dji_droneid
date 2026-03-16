@@ -40,6 +40,12 @@ fw_setenv gain_mode fast_attack
 reboot
 ```
 
+Verify the settings were saved:
+
+```bash
+fw_printenv ipaddr_eth tcp_serverip tcp_serverport gain_mode
+```
+
 Then power off, flip back to **SD mode**, and power on.
 
 | Variable | Value | Description |
