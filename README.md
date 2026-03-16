@@ -22,7 +22,15 @@ Supports both legacy and new AntSDR firmware, including **O4 encrypted drone det
 
 ### 2. AntSDR Configuration (New Firmware)
 
-For a new AntSDR, flip the boot switch to **QSPI mode**, power on, and SSH in as `root`/`analog`. Then copy-paste:
+For a new AntSDR, flip the boot switch to **QSPI mode**, power on, and connect via serial console:
+
+```bash
+sudo tio /dev/ttyUSB0
+```
+
+Login as `root`/`analog`. Serial console via `tio` is the easiest way to access a new AntSDR before the network is configured — no IP address or SSH needed, just a USB cable.
+
+Then copy-paste:
 
 ```bash
 fw_setenv ipaddr_eth 172.31.100.2
