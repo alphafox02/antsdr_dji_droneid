@@ -56,6 +56,7 @@ MON_ZMQ_RECV_TIMEOUT_MS = int(os.getenv("WARD_MON_RECV_TIMEOUT_MS", "50"))
 # Fallback/Validation constants
 MAX_HORIZONTAL_SPEED = 200.0        # m/s; above this, treat as invalid
 ALERT_ID = "drone-alert"            # standardized ID when position/serial is unknown
+PROXY_URL = None  # Set by --proxy flag
 MAX_DISTANCE_FROM_SENSOR_KM = 50.0  # km; if drone is further than this from sensor, likely garbage
 
 # Cached sensor GPS from the monitor: (lat, lon, alt) or None
@@ -75,6 +76,9 @@ def parse_args():
                         help=f"AntSDR port for legacy mode (default: {ANTSDR_PORT})")
     parser.add_argument("--listen-port", type=int, default=None,
                         help=f"Listen port for new firmware mode (default: {LISTEN_PORT})")
+    parser.add_argument("--proxy", nargs='?', const="http://172.31.100.1",
+                        default=None, metavar="URL",
+                        help="Enable proxy lookups (default URL: http://172.31.100.1)")
     return parser.parse_args()
 
 
@@ -243,9 +247,21 @@ def parse_new_fw_line(line: str) -> dict:
         f4_inner = ""
 
     if protocol == "4":
-        # O4 encrypted drone: hash is in field4 parens, field5 is empty
+        # O4 encrypted drone: try proxy for decrypted serial, fallback to hash
         serial_number = f"drone-alert-{f4_inner}" if f4_inner else ALERT_ID
         device_type = "DJI Encrypted (O4)"
+        if PROXY_URL and f4_inner:
+            try:
+                import urllib.request
+                resp = urllib.request.urlopen(
+                    f"{PROXY_URL}/serials/{f4_inner}", timeout=1)
+                data = json.loads(resp.read())
+                if data.get("serial"):
+                    serial_number = data["serial"]
+                    device_type = "DJI O4 (Decrypted)"
+                    logging.info(f"O4 decrypted: {serial_number} (drone={f4_inner})")
+            except Exception:
+                pass  # No proxy or no serial — use drone-alert fallback
     else:
         # O2/O3 decoded drone: field5 is the serial, field4 name is the model
         serial_number = field5 if len(field5.strip()) >= 5 else ALERT_ID
@@ -567,9 +583,13 @@ def main():
     setup_logging(args.debug)
 
     # Apply CLI overrides
+    global PROXY_URL
     antsdr_ip = args.antsdr_ip or ANTSDR_IP
     antsdr_port = args.antsdr_port or ANTSDR_PORT
     listen_port = args.listen_port or LISTEN_PORT
+    PROXY_URL = args.proxy
+    if PROXY_URL:
+        logging.info(f"Proxy enabled: {PROXY_URL}")
 
     # ZMQ publisher (main thread only)
     context = zmq.Context()

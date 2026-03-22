@@ -1,0 +1,14 @@
+[Unit]
+Description=DJI Receiver Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=dragon
+WorkingDirectory=/home/dragon/WarDragon/DroneID
+ExecStart=/usr/bin/python3 /home/dragon/WarDragon/DroneID/dji_receiver.py --proxy
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
