@@ -132,7 +132,25 @@ Position data is encrypted and not available without a decryption API.
 
 **Important:** DJI drones only broadcast DroneID when motors are spinning. Power-on alone only activates the OcuSync control link.
 
-## Service Management
+## Systemd Service (Host)
+
+A systemd service file for `dji_receiver.py` is included in this repo. To install it on your host (e.g. WarDragon kit):
+
+```bash
+sudo cp dji-receiver.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable dji-receiver
+sudo systemctl start dji-receiver
+```
+
+Check status and logs:
+
+```bash
+sudo systemctl status dji-receiver
+journalctl -u dji-receiver -f
+```
+
+## AntSDR Service Management
 
 ```bash
 # Stop the drone detection daemon on the AntSDR
