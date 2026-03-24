@@ -16,7 +16,7 @@ Usage:
 
 Options:
     -d, --debug          Enable debug output to console.
-    --mode MODE          Connection mode: legacy, new, or dual (default: dual)
+    --mode MODE          Connection mode: legacy, new, or dual (default: new)
     --antsdr-ip IP       AntSDR IP for legacy mode (default: 192.168.1.10)
     --antsdr-port PORT   AntSDR port for legacy mode (default: 41030)
     --listen-port PORT   Listen port for new firmware mode (default: 52002)
@@ -68,8 +68,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="DJI Receiver: Publish DJI DroneID data via ZMQ.")
     parser.add_argument("-d", "--debug", action="store_true",
                         help="Enable debug messages and logging output.")
-    parser.add_argument("--mode", choices=["legacy", "new", "dual"], default="dual",
-                        help="Connection mode (default: dual)")
+    parser.add_argument("--mode", choices=["legacy", "new", "dual"], default="new",
+                        help="Connection mode (default: new)")
     parser.add_argument("--antsdr-ip", default=None,
                         help=f"AntSDR IP for legacy mode (default: {ANTSDR_IP})")
     parser.add_argument("--antsdr-port", type=int, default=None,

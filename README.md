@@ -65,17 +65,15 @@ Once booted with the new firmware (SD mode), SSH access is `root`/`1`.
 python3 dji_receiver.py -d
 ```
 
-This starts in **dual mode** by default — it simultaneously:
-- Listens on port `52002` for new firmware connections (TCP server)
-- Connects to the AntSDR on port `41030` for legacy firmware (TCP client)
+This listens on port `52002` for new firmware connections and publishes drone data on **ZMQ port 4221**.
 
-Drone data is published on **ZMQ port 4221**.
+Use `--mode legacy` to connect to old firmware on port 41030, or `--mode dual` for both.
 
 ### Command-Line Options
 
 ```
 -d, --debug          Enable debug output
---mode MODE          legacy, new, or dual (default: dual)
+--mode MODE          legacy, new, or dual (default: new)
 --antsdr-ip IP       AntSDR IP for legacy mode (default: 172.31.100.2)
 --antsdr-port PORT   AntSDR port for legacy mode (default: 41030)
 --listen-port PORT   Listen port for new firmware (default: 52002)
