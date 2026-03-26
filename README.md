@@ -37,13 +37,14 @@ fw_setenv ipaddr_eth 172.31.100.2
 fw_setenv tcp_serverip 172.31.100.1
 fw_setenv tcp_serverport 52002
 fw_setenv gain_mode fast_attack
+fw_setenv heart_beate_time 30
 reboot
 ```
 
 Verify the settings were saved:
 
 ```bash
-fw_printenv ipaddr_eth tcp_serverip tcp_serverport gain_mode
+fw_printenv ipaddr_eth tcp_serverip tcp_serverport gain_mode heart_beate_time
 ```
 
 Then power off, flip back to **SD mode**, and power on.
@@ -54,6 +55,7 @@ Then power off, flip back to **SD mode**, and power on.
 | `tcp_serverip` | `172.31.100.1` | Your host/WarDragon IP (where `dji_receiver.py` runs) |
 | `tcp_serverport` | `52002` | TCP port (must match `--listen-port`) |
 | `gain_mode` | `fast_attack` | AD9361 AGC mode for drone detection |
+| `heart_beate_time` | `30` | Heartbeat interval in seconds (keeps TCP connection alive) |
 
 Once booted with the new firmware (SD mode), SSH access is `root`/`1`.
 
