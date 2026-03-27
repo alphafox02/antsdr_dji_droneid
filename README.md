@@ -40,13 +40,15 @@ fw_setenv gain_mode fast_attack
 fw_setenv heart_beate_time 30
 fw_setenv api_host 172.31.100.1
 fw_setenv auth_secret placeholder
+fw_setenv token_secret placeholder
+fw_setenv device_serial antsdr_e200
 reboot
 ```
 
 Verify the settings were saved:
 
 ```bash
-fw_printenv ipaddr_eth tcp_serverip tcp_serverport gain_mode heart_beate_time api_host auth_secret
+fw_printenv ipaddr_eth tcp_serverip tcp_serverport gain_mode heart_beate_time api_host auth_secret token_secret device_serial
 ```
 
 Then power off, flip back to **SD mode**, and power on.
@@ -60,6 +62,8 @@ Then power off, flip back to **SD mode**, and power on.
 | `heart_beate_time` | `30` | Heartbeat interval in seconds (keeps TCP connection alive) |
 | `api_host` | `172.31.100.1` | Required for O4 detection (must be non-empty) |
 | `auth_secret` | `placeholder` | Required for O4 detection (must be non-empty) |
+| `token_secret` | `placeholder` | Required for O4 detection (must be non-empty) |
+| `device_serial` | `antsdr_e200` | Device identifier (must be non-empty) |
 
 Once booted with the new firmware (SD mode), SSH access is `root`/`1`.
 
