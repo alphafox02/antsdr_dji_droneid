@@ -38,13 +38,15 @@ fw_setenv tcp_serverip 172.31.100.1
 fw_setenv tcp_serverport 52002
 fw_setenv gain_mode fast_attack
 fw_setenv heart_beate_time 30
+fw_setenv api_host 172.31.100.1
+fw_setenv auth_secret placeholder
 reboot
 ```
 
 Verify the settings were saved:
 
 ```bash
-fw_printenv ipaddr_eth tcp_serverip tcp_serverport gain_mode heart_beate_time
+fw_printenv ipaddr_eth tcp_serverip tcp_serverport gain_mode heart_beate_time api_host auth_secret
 ```
 
 Then power off, flip back to **SD mode**, and power on.
@@ -56,6 +58,8 @@ Then power off, flip back to **SD mode**, and power on.
 | `tcp_serverport` | `52002` | TCP port (must match `--listen-port`) |
 | `gain_mode` | `fast_attack` | AD9361 AGC mode for drone detection |
 | `heart_beate_time` | `30` | Heartbeat interval in seconds (keeps TCP connection alive) |
+| `api_host` | `172.31.100.1` | Required for O4 detection (must be non-empty) |
+| `auth_secret` | `placeholder` | Required for O4 detection (must be non-empty) |
 
 Once booted with the new firmware (SD mode), SSH access is `root`/`1`.
 
