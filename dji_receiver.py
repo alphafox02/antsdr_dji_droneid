@@ -57,6 +57,8 @@ MON_ZMQ_RECV_TIMEOUT_MS = int(os.getenv("WARD_MON_RECV_TIMEOUT_MS", "50"))
 MAX_HORIZONTAL_SPEED = 200.0        # m/s; above this, treat as invalid
 ALERT_ID = "drone-alert"            # standardized ID when position/serial is unknown
 PROXY_URL = None  # Set by --proxy flag
+_proxy_cache = {}  # drone_hash -> {"data": {...}, "time": timestamp}
+_proxy_cache_ttl = 5  # seconds — don't hammer proxy for same drone
 MAX_DISTANCE_FROM_SENSOR_KM = 50.0  # km; if drone is further than this from sensor, likely garbage
 
 # Cached sensor GPS from the monitor: (lat, lon, alt) or None
@@ -252,16 +254,45 @@ def parse_new_fw_line(line: str) -> dict:
         device_type = "DJI Encrypted (O4)"
         if PROXY_URL and f4_inner:
             try:
-                import urllib.request
-                resp = urllib.request.urlopen(
-                    f"{PROXY_URL}/serials/{f4_inner}", timeout=1)
-                data = json.loads(resp.read())
-                if data.get("serial"):
+                now = time.time()
+                cached = _proxy_cache.get(f4_inner)
+
+                # Use cache if fresh enough
+                if cached and (now - cached["time"]) < _proxy_cache_ttl:
+                    data = cached["data"]
+                else:
+                    # Query proxy: telemetry first (GPS), serials fallback (serial only)
+                    import urllib.request
+                    data = None
+                    for endpoint in ['/telemetry/', '/serials/']:
+                        try:
+                            resp = urllib.request.urlopen(
+                                f"{PROXY_URL}{endpoint}{f4_inner}", timeout=1)
+                            data = json.loads(resp.read())
+                            if data.get("serial") or data.get("drone_lat"):
+                                break
+                        except Exception:
+                            continue
+                    if data:
+                        _proxy_cache[f4_inner] = {"data": data, "time": now}
+
+                if data and data.get("serial"):
                     serial_number = data["serial"]
                     device_type = "DJI O4 (Decrypted)"
-                    logging.info(f"O4 decrypted: {serial_number} (drone={f4_inner})")
+                    drone_lat = float(data.get("drone_lat", drone_lat))
+                    drone_lon = float(data.get("drone_lon", drone_lon))
+                    pilot_lat = float(data.get("pilot_lat", pilot_lat))
+                    pilot_lon = float(data.get("pilot_lon", pilot_lon))
+                    home_lat = float(data.get("home_lat", home_lat))
+                    home_lon = float(data.get("home_lon", home_lon))
+                    geodetic_altitude = float(data.get("altitude", geodetic_altitude))
+                    height_agl = float(data.get("height_agl", height_agl))
+                    speed_val = float(data.get("speed", 0))
+                    if speed_val > 0:
+                        horizontal_speed = speed_val
+                    logging.info(f"O4 decrypted: {serial_number} lat={drone_lat:.4f} lon={drone_lon:.4f} alt={geodetic_altitude} (drone={f4_inner})")
             except Exception:
-                pass  # No proxy or no serial — use drone-alert fallback
+                pass  # No proxy — use drone-alert fallback
     else:
         # O2/O3 decoded drone: field5 is the serial, field4 name is the model
         serial_number = field5 if len(field5.strip()) >= 5 else ALERT_ID
