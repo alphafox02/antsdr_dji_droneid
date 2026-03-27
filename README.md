@@ -60,10 +60,10 @@ Then power off, flip back to **SD mode**, and power on.
 | `tcp_serverport` | `52002` | TCP port (must match `--listen-port`) |
 | `gain_mode` | `fast_attack` | AD9361 AGC mode for drone detection |
 | `heart_beate_time` | `30` | Heartbeat interval in seconds (keeps TCP connection alive) |
-| `api_host` | `172.31.100.1` | Required for O4 detection (must be non-empty) |
-| `auth_secret` | `placeholder` | Required for O4 detection (must be non-empty) |
-| `token_secret` | `placeholder` | Required for O4 detection (must be non-empty) |
-| `device_serial` | `antsdr_e200` | Device identifier (must be non-empty) |
+| `api_host` | `172.31.100.1` | Firmware requires this to be set |
+| `auth_secret` | `placeholder` | Firmware requires this to be set |
+| `token_secret` | `placeholder` | Firmware requires this to be set |
+| `device_serial` | `antsdr_e200` | Device identifier |
 
 Once booted with the new firmware (SD mode), SSH access is `root`/`1`.
 
