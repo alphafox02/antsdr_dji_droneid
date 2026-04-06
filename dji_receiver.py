@@ -419,6 +419,7 @@ def format_as_zmq_json(parsed_data: dict,
     used_sensor = False
     use_sensor_fallback = False
 
+    basic_id_value = parsed_data.get("serial_number", "unknown")
     is_alert = basic_id_value.startswith("drone-alert")
 
     if monitor_gps is not None:
