@@ -249,9 +249,13 @@ def parse_new_fw_line(line: str) -> dict:
         f4_inner = ""
 
     if protocol == "4":
-        # O4 encrypted drone: try proxy for decrypted serial, fallback to hash
-        serial_number = f"drone-alert-{f4_inner}" if f4_inner else ALERT_ID
-        device_type = "DJI Encrypted (O4)"
+        # O4 drone: check if firmware provided serial (field5), fallback to hash
+        if len(field5.strip()) >= 5:
+            serial_number = field5.strip()
+            device_type = "DJI O4 (Decrypted)"
+        else:
+            serial_number = f"drone-alert-{f4_inner}" if f4_inner else ALERT_ID
+            device_type = "DJI Encrypted (O4)"
         if PROXY_URL and f4_inner:
             try:
                 now = time.time()
@@ -415,30 +419,33 @@ def format_as_zmq_json(parsed_data: dict,
     used_sensor = False
     use_sensor_fallback = False
 
+    is_alert = basic_id_value.startswith("drone-alert")
+
     if monitor_gps is not None:
         ml, mo, _ = monitor_gps
         sensor_valid = is_valid_latlon(ml, mo)
 
-        if not have_valid_drone_pos:
+        if not have_valid_drone_pos and is_alert:
+            # Unknown drone with no GPS — use sensor position as proximity marker
             use_sensor_fallback = True
-            logging.debug(f"Drone position invalid ({d_lat}, {d_lon}), will use sensor fallback")
-        elif sensor_valid:
+            logging.debug(f"Alert drone with no GPS ({d_lat}, {d_lon}), using sensor fallback")
+        elif not have_valid_drone_pos and not is_alert:
+            # Known drone with no GPS lock (e.g. indoors) — keep 0.0, don't fake position
+            logging.debug(f"Known drone {basic_id_value} has no GPS ({d_lat}, {d_lon}), reporting as-is")
+        elif sensor_valid and have_valid_drone_pos:
             distance_km = haversine_distance_km(d_lat, d_lon, ml, mo)
             if distance_km > MAX_DISTANCE_FROM_SENSOR_KM:
-                use_sensor_fallback = True
-                logging.debug(f"Drone position ({d_lat}, {d_lon}) is {distance_km:.1f}km from sensor - likely garbage, using sensor fallback")
+                if is_alert:
+                    use_sensor_fallback = True
+                    logging.debug(f"Alert drone position ({d_lat}, {d_lon}) is {distance_km:.1f}km from sensor - using sensor fallback")
+                else:
+                    logging.debug(f"Known drone {basic_id_value} position ({d_lat}, {d_lon}) is {distance_km:.1f}km from sensor - reporting as-is")
 
         if use_sensor_fallback and sensor_valid:
             d_lat, d_lon = ml, mo
             used_sensor = True
         elif use_sensor_fallback and not sensor_valid:
             logging.warning(f"Sensor GPS invalid ({ml}, {mo}) - cannot use as fallback. Check WarDragon GPS on port 4225.")
-
-    # Basic ID Message — preserve drone-alert-{hash} for O4 encrypted drones
-    basic_id_value = parsed_data.get("serial_number", "unknown")
-    if used_sensor and not basic_id_value.startswith("drone-alert-"):
-        # Only override to generic alert if it's not already an O4 hash ID
-        basic_id_value = ALERT_ID
 
     basic_id_message = {
         "Basic ID": {
