@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 User=root
-WorkingDirectory=/home/dragon/WarDragon/proxy
-ExecStart=/usr/bin/python3 /home/dragon/WarDragon/proxy/dragonscope.py
+WorkingDirectory=/home/dragon/WarDragon/antsdr_dji_droneid
+ExecStart=/usr/bin/python3 /home/dragon/WarDragon/antsdr_dji_droneid/dragonscope.py
 Restart=always
 RestartSec=5
 
