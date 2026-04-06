@@ -136,9 +136,57 @@ O4 drones (Mini 5, etc.) broadcast encrypted DroneID. The receiver can detect th
 - **Frequency** — detection frequency with hopping pattern
 - **RSSI** — signal strength for proximity estimation
 
-Position data is encrypted and not available without a decryption API.
+Position data is not available from the receiver alone for O4 drones.
 
 **Important:** DJI drones only broadcast DroneID when motors are spinning. Power-on alone only activates the OcuSync control link.
+
+## DragonScope Proxy (O4 Position Data)
+
+DragonScope is a lightweight proxy that provides full O4 telemetry — serial number, drone GPS, pilot position, home point, altitude, and speed. When configured, O4 drones appear in dji_receiver with the same data as O2/O3.
+
+### Setup
+
+1. Copy the proxy files to your WarDragon kit:
+   ```bash
+   mkdir -p /home/dragon/WarDragon/proxy
+   cp dragonscope.py dragonscope.cfg /home/dragon/WarDragon/proxy/
+   ```
+
+2. Edit `dragonscope.cfg` with your endpoint URL and key:
+   ```bash
+   nano /home/dragon/WarDragon/proxy/dragonscope.cfg
+   ```
+
+3. Install the systemd service:
+   ```bash
+   sudo cp dragonscope.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable dragonscope
+   sudo systemctl start dragonscope
+   ```
+
+4. Ensure `api_host` on the AntSDR points to the WarDragon IP (where the proxy listens on port 80):
+   ```bash
+   ssh root@<antsdr_ip>
+   fw_setenv api_host <wardragon_ip>
+   reboot
+   ```
+
+5. Verify:
+   ```bash
+   curl http://localhost/health
+   # {"status": "ok", "licensed": true}
+   ```
+
+No `--proxy` flag is needed in dji_receiver. The firmware handles the API call natively and passes decoded data through its normal CSV output.
+
+### Files
+
+| File | Description |
+|------|-------------|
+| `dragonscope.py` | Proxy server (runs on WarDragon, listens on port 80) |
+| `dragonscope.cfg` | Configuration (endpoint URL + key) |
+| `dragonscope.service` | systemd unit file |
 
 ## Systemd Service (Host)
 

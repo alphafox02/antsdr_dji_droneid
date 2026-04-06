@@ -1,0 +1,14 @@
+[Unit]
+Description=DragonScope
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=root
+WorkingDirectory=/home/dragon/WarDragon/proxy
+ExecStart=/usr/bin/python3 /home/dragon/WarDragon/proxy/dragonscope.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
