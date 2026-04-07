@@ -179,32 +179,63 @@ class ThreadedServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
+CONFIG_CHECK_INTERVAL = 30  # seconds between config reloads
+
+
+def reload_config():
+    """Reload config from disk. Picks up new license keys without restart."""
+    global config, api_key, remote_url
+    config = load_config()
+    remote = config.get("remote", "").rstrip('/')
+    key = config.get("license_key")
+
+    if remote and remote != "https://CHANGE_ME":
+        remote_url = remote
+    else:
+        remote_url = None
+
+    if key and key != "CHANGE_ME":
+        if key != api_key and api_key is not None:
+            print(f"  License key updated")
+        api_key = key
+    else:
+        api_key = None
+
+
+def config_watcher():
+    """Periodically check if config has been updated."""
+    while True:
+        time.sleep(CONFIG_CHECK_INTERVAL)
+        old_key = api_key
+        reload_config()
+        if api_key and not old_key:
+            print(f"  License activated — O4 telemetry enabled")
+
+
 def main():
     global config, api_key, remote_url, device_id
 
     config = load_config()
-
-    remote_url = config.get("remote", "").rstrip('/')
-    api_key = config.get("license_key")
     device_id = get_device_id()
     port = config.get("listen_port", 80)
     host = config.get("listen_addr", "0.0.0.0")
 
-    if not remote_url or remote_url == "https://CHANGE_ME":
-        print("Error: set 'remote' in dragonscope.cfg")
-        return
-
-    if not api_key or api_key == "CHANGE_ME":
-        print("Warning: no license_key in dragonscope.cfg (detection only)")
-        api_key = None
+    reload_config()
 
     print(f"DragonScope")
     print(f"  Config:   {config.get('_path', 'none')}")
-    print(f"  Remote:   {remote_url}")
+    print(f"  Remote:   {remote_url or 'not configured'}")
     print(f"  Listen:   {host}:{port}")
-    print(f"  License:  {'loaded' if api_key else 'NONE'}")
+    print(f"  License:  {'loaded' if api_key else 'NONE (detection only)'}")
     print(f"  Device:   {device_id or 'unknown'}")
+    if not api_key:
+        print(f"  Waiting for license key in dragonscope.cfg (checking every {CONFIG_CHECK_INTERVAL}s)")
     print()
+
+    # Background thread watches for config changes
+    import threading
+    t = threading.Thread(target=config_watcher, daemon=True)
+    t.start()
 
     server = ThreadedServer((host, port), ProxyHandler)
     try:
