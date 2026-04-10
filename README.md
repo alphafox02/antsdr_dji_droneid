@@ -9,7 +9,8 @@ Supports both legacy and new AntSDR firmware, including **O4 encrypted drone det
 | Protocol | Examples | Data Available |
 |----------|----------|---------------|
 | O2/O3 (unencrypted) | Mini 2, Mini 3 Pro, Air 2S, Mavic 3 | Serial, model, drone/pilot/home GPS, altitude, speed, RSSI |
-| O4 (encrypted) | Mini 5, future models | Hash ID, frequency, RSSI (position encrypted) |
+| O4 (encrypted) | Mini 5, future models | Hash ID, frequency, RSSI |
+| O4 + DragonScope | Mini 5, future models | Serial, drone/pilot/home GPS, altitude, speed, RSSI (requires [DragonScope](#dragonscope-o4-position-data)) |
 
 ## Quick Start
 
@@ -152,9 +153,16 @@ Position data is not available from the receiver alone for O4 drones.
 
 ## DragonScope (O4 Position Data)
 
-DragonScope provides full O4 telemetry — serial number, drone GPS, pilot position, home point, altitude, and speed. When configured, O4 drones appear in dji_receiver with the same data as O2/O3. An internet connection is required on the WarDragon for O4 telemetry. O2/O3 drones are unaffected and continue to work fully offline.
+DragonScope provides full O4 telemetry — serial number, drone GPS, pilot position, home point, altitude, and speed. When configured, O4 drones appear in dji_receiver with the same data as O2/O3.
 
-DragonScope runs as a service on your WarDragon and starts automatically. Without a license key configured, it runs in detection-only mode — O4 drones still appear as `drone-alert-{hash}` but without position data. Once a key is added, full telemetry activates within 30 seconds with no restart needed.
+**Requirements:**
+- An O4-capable AntSDR firmware (provided separately — not the same as the firmware zips in this repo)
+- A DragonScope license key and config file (provided separately)
+- An internet connection on the WarDragon
+
+O2/O3 drones are unaffected and continue to work fully offline. DragonScope runs as a service on your WarDragon and starts automatically. Without a license key configured, it runs in detection-only mode — O4 drones still appear as `drone-alert-{hash}` but without position data. Once a key is added, full telemetry activates within 30 seconds with no restart needed.
+
+To obtain the DragonScope firmware and a license key, contact us.
 
 ### Setup
 
