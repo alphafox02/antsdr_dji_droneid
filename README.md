@@ -22,36 +22,45 @@ Supports both legacy and new AntSDR firmware, including **O4 encrypted drone det
 
 ### 2. AntSDR Configuration (New Firmware)
 
-For a new AntSDR, flip the boot switch to **QSPI mode**, power on, and connect via serial console:
+These settings only need to be done once per AntSDR.
 
-```bash
-sudo tio /dev/ttyUSB0
-```
+1. **Flip the boot switch** to **QSPI mode**
+2. **Connect** the AntSDR's console/power USB port to your WarDragon
+3. Open a terminal and connect to the serial console:
+   ```bash
+   sudo tio /dev/ttyUSB0
+   ```
+4. **Power cycle** the AntSDR — you should see boot messages scrolling. If you don't see any output, you may be on the wrong serial port (e.g., if a Sonoff or other USB device is also connected). Exit with `Ctrl+T` then `Q` and try:
+   ```bash
+   sudo tio /dev/ttyUSB1
+   ```
+   Then power cycle the AntSDR again.
 
-Login as `root`/`analog`. Serial console via `tio` is the easiest way to access a new AntSDR before the network is configured — no IP address or SSH needed, just a USB cable.
+5. Login as `root` / `analog`
 
-Then copy-paste:
+6. Copy-paste all variables at once:
+   ```bash
+   fw_setenv ipaddr_eth 172.31.100.2
+   fw_setenv tcp_serverip 172.31.100.1
+   fw_setenv tcp_serverport 52002
+   fw_setenv gain_mode fast_attack
+   fw_setenv heart_beate_time 30
+   fw_setenv api_host 172.31.100.1
+   fw_setenv auth_secret placeholder
+   fw_setenv token_secret placeholder
+   fw_setenv device_serial antsdr_e200
+   fw_setenv device_mode 1
+   reboot
+   ```
 
-```bash
-fw_setenv ipaddr_eth 172.31.100.2
-fw_setenv tcp_serverip 172.31.100.1
-fw_setenv tcp_serverport 52002
-fw_setenv gain_mode fast_attack
-fw_setenv heart_beate_time 30
-fw_setenv api_host 172.31.100.1
-fw_setenv auth_secret placeholder
-fw_setenv token_secret placeholder
-fw_setenv device_serial antsdr_e200
-reboot
-```
+7. After reboot, verify the settings saved:
+   ```bash
+   fw_printenv ipaddr_eth tcp_serverip tcp_serverport gain_mode heart_beate_time api_host auth_secret token_secret device_serial device_mode
+   ```
 
-Verify the settings were saved:
+8. **Power off** the AntSDR, **disconnect** the console cable, **flip the switch back to SD mode**, **reconnect** the cable, and **power on**
 
-```bash
-fw_printenv ipaddr_eth tcp_serverip tcp_serverport gain_mode heart_beate_time api_host auth_secret token_secret device_serial
-```
-
-Then power off, flip back to **SD mode**, and power on.
+> **Note:** The AntSDR may need the power/console cable disconnected and reconnected when switching between QSPI and SD mode in order to fully reboot.
 
 | Variable | Value | Description |
 |----------|-------|-------------|
@@ -60,10 +69,11 @@ Then power off, flip back to **SD mode**, and power on.
 | `tcp_serverport` | `52002` | TCP port (must match `--listen-port`) |
 | `gain_mode` | `fast_attack` | AD9361 AGC mode for drone detection |
 | `heart_beate_time` | `30` | Heartbeat interval in seconds (keeps TCP connection alive) |
-| `api_host` | `172.31.100.1` | Firmware requires this to be set |
-| `auth_secret` | `placeholder` | Firmware requires this to be set |
-| `token_secret` | `placeholder` | Firmware requires this to be set |
+| `api_host` | `172.31.100.1` | WarDragon IP (where DragonScope proxy listens on port 80) |
+| `auth_secret` | `placeholder` | Required by firmware (any value) |
+| `token_secret` | `placeholder` | Required by firmware (any value) |
 | `device_serial` | `antsdr_e200` | Device identifier |
+| `device_mode` | `1` | Enables O4 drone detection |
 
 Once booted with the new firmware (SD mode), SSH access is `root`/`1`.
 
@@ -140,52 +150,52 @@ Position data is not available from the receiver alone for O4 drones.
 
 **Important:** DJI drones only broadcast DroneID when motors are spinning. Power-on alone only activates the OcuSync control link.
 
-## DragonScope Proxy (O4 Position Data)
+## DragonScope (O4 Position Data)
 
-DragonScope is a lightweight proxy that provides full O4 telemetry — serial number, drone GPS, pilot position, home point, altitude, and speed. When configured, O4 drones appear in dji_receiver with the same data as O2/O3.
+DragonScope provides full O4 telemetry — serial number, drone GPS, pilot position, home point, altitude, and speed. When configured, O4 drones appear in dji_receiver with the same data as O2/O3. An internet connection is required on the WarDragon for O4 telemetry. O2/O3 drones are unaffected and continue to work fully offline.
+
+DragonScope runs as a service on your WarDragon and starts automatically. Without a license key configured, it runs in detection-only mode — O4 drones still appear as `drone-alert-{hash}` but without position data. Once a key is added, full telemetry activates within 30 seconds with no restart needed.
 
 ### Setup
 
-1. Copy the proxy files to your WarDragon kit:
-   ```bash
-   mkdir -p /home/dragon/WarDragon/proxy
-   cp dragonscope.py dragonscope.cfg /home/dragon/WarDragon/proxy/
-   ```
+If you already have this repo cloned on your WarDragon:
 
-2. Edit `dragonscope.cfg` with your endpoint URL and key:
-   ```bash
-   nano /home/dragon/WarDragon/proxy/dragonscope.cfg
-   ```
+```bash
+cd /home/dragon/WarDragon/antsdr_dji_droneid
+git pull
+```
 
-3. Install the systemd service:
-   ```bash
-   sudo cp dragonscope.service /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl enable dragonscope
-   sudo systemctl start dragonscope
-   ```
+Place your `dragonscope.cfg` (provided separately with your license key) in the same directory:
 
-4. Ensure `api_host` on the AntSDR points to the WarDragon IP (where the proxy listens on port 80):
-   ```bash
-   ssh root@<antsdr_ip>
-   fw_setenv api_host <wardragon_ip>
-   reboot
-   ```
+```bash
+cp /path/to/dragonscope.cfg /home/dragon/WarDragon/antsdr_dji_droneid/
+```
 
-5. Verify:
-   ```bash
-   curl http://localhost/health
-   # {"status": "ok", "licensed": true}
-   ```
+Install both services:
 
-No `--proxy` flag is needed in dji_receiver. The firmware handles the API call natively and passes decoded data through its normal CSV output.
+```bash
+sudo cp dji-receiver.service dragonscope.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart dji-receiver
+sudo systemctl enable dragonscope
+sudo systemctl start dragonscope
+```
+
+Verify DragonScope is running:
+
+```bash
+curl http://localhost/health
+# {"status": "ok", "licensed": true}
+```
+
+Ensure `api_host` on the AntSDR points to the WarDragon IP (see [AntSDR Configuration](#2-antsdr-configuration-new-firmware) above). No `--proxy` flag is needed in dji_receiver.
 
 ### Files
 
 | File | Description |
 |------|-------------|
-| `dragonscope.py` | Proxy server (runs on WarDragon, listens on port 80) |
-| `dragonscope.cfg` | Configuration (endpoint URL + key) |
+| `dragonscope.py` | O4 telemetry proxy (runs on WarDragon, listens on port 80) |
+| `dragonscope.cfg` | Configuration (endpoint URL + license key, provided separately) |
 | `dragonscope.service` | systemd unit file |
 
 ## Systemd Service (Host)
