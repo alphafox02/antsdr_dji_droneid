@@ -49,7 +49,7 @@ These settings only need to be done once per AntSDR.
    fw_setenv auth_secret placeholder
    fw_setenv token_secret placeholder
    fw_setenv device_serial antsdr_e200
-   fw_setenv device_mode 1
+   fw_setenv device_mode auto
    reboot
    ```
 
@@ -73,7 +73,7 @@ These settings only need to be done once per AntSDR.
 | `auth_secret` | `placeholder` | Required by firmware (any value) |
 | `token_secret` | `placeholder` | Required by firmware (any value) |
 | `device_serial` | `antsdr_e200` | Device identifier |
-| `device_mode` | `1` | Enables O4 drone detection |
+| `device_mode` | `auto` | Frequency mode (`auto` hops 5.8 GHz channels) |
 
 Once booted with the new firmware (SD mode), SSH access is `root`/`1`.
 
