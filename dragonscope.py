@@ -113,7 +113,15 @@ def call_remote(hex_payload):
         resp = urlopen(req, timeout=15)
         return resp.read()
     except Exception as e:
-        print(f"  Remote error: {e}")
+        detail = ""
+        if hasattr(e, 'code'):
+            detail = f" (HTTP {e.code})"
+        if hasattr(e, 'read'):
+            try:
+                detail += f" {e.read().decode()}"
+            except Exception:
+                pass
+        print(f"  Remote error: {e}{detail}")
         return None
 
 
