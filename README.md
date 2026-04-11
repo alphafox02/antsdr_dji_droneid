@@ -47,6 +47,7 @@ These settings only need to be done once per AntSDR.
    fw_setenv gain_mode fast_attack
    fw_setenv heart_beate_time 30
    fw_setenv api_host 172.31.100.1
+   fw_setenv request_time 5
    fw_setenv auth_secret placeholder
    fw_setenv token_secret placeholder
    fw_setenv device_serial antsdr_e200
@@ -56,7 +57,7 @@ These settings only need to be done once per AntSDR.
 
 7. After reboot, verify the settings saved:
    ```bash
-   fw_printenv ipaddr_eth tcp_serverip tcp_serverport gain_mode heart_beate_time api_host auth_secret token_secret device_serial device_mode
+   fw_printenv ipaddr_eth tcp_serverip tcp_serverport gain_mode heart_beate_time api_host request_time auth_secret token_secret device_serial device_mode
    ```
 
 8. **Power off** the AntSDR, **disconnect** the console cable, **flip the switch back to SD mode**, **reconnect** the cable, and **power on**
@@ -71,6 +72,7 @@ These settings only need to be done once per AntSDR.
 | `gain_mode` | `fast_attack` | AD9361 AGC mode for drone detection |
 | `heart_beate_time` | `30` | Heartbeat interval in seconds (keeps TCP connection alive) |
 | `api_host` | `172.31.100.1` | WarDragon IP (where DragonScope proxy listens on port 80) |
+| `request_time` | `5` | Seconds between O4 telemetry updates (default 30, lower = faster GPS) |
 | `auth_secret` | `placeholder` | Required by firmware (any value) |
 | `token_secret` | `placeholder` | Required by firmware (any value) |
 | `device_serial` | `antsdr_e200` | Device identifier |
