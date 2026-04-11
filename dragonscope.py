@@ -105,6 +105,7 @@ def call_remote(hex_payload):
     """Forward to remote endpoint, return raw response."""
     url = f"{remote_url}/api/o4online/decrypt?hex={hex_payload}"
     req = Request(url)
+    req.add_header("User-Agent", "DragonScope/1.0")
     if api_key:
         req.add_header("x-api-key", api_key)
     if device_id:
