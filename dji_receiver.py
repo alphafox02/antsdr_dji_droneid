@@ -551,6 +551,14 @@ def new_fw_connection_handler(conn: socket.socket, addr, data_queue: queue.Queue
     """Handle a single connection from a new-firmware AntSDR."""
     logging.info(f"[NewFW] Connection from {addr}")
     conn.settimeout(90)  # heartbeat is every 30s; 90s covers 3 missed beats
+    # TCP keepalive — detect dead connections faster at the OS level
+    conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    try:
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
+    except (AttributeError, OSError):
+        pass  # Not all platforms support these
     buf = ""
 
     try:

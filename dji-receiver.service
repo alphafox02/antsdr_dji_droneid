@@ -8,7 +8,9 @@ User=dragon
 WorkingDirectory=/home/dragon/WarDragon/antsdr_dji_droneid
 ExecStart=/usr/bin/python3 /home/dragon/WarDragon/antsdr_dji_droneid/dji_receiver.py
 Restart=always
-RestartSec=5
+RestartSec=3
+KillMode=mixed
+TimeoutStopSec=5
 
 [Install]
 WantedBy=multi-user.target
