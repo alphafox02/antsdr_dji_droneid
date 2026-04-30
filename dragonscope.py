@@ -46,7 +46,13 @@ def load_config():
 # --- Device fingerprint ---
 
 def get_device_id():
-    """Hardware fingerprint tied to physical board. Works on Pi (ARM) and x86_64."""
+    """Hardware fingerprint tied to physical board.
+
+    Stable across reboots and network changes:
+      - Pi (ARM):    CPU serial from /proc/cpuinfo (burned in at factory)
+      - x86_64:      DMI product UUID (motherboard firmware)
+      - Fallback:    machine-id + board_serial
+    """
     parts = []
     # Pi CPU serial — unique per board, survives SD card clone
     try:
@@ -65,7 +71,7 @@ def get_device_id():
                 parts.append(uuid)
         except Exception:
             pass
-    # x86_64 fallback: machine-id + board serial
+    # Fallback: machine-id + board serial (used if DMI UUID is unavailable)
     if not parts:
         try:
             parts.append(open("/etc/machine-id").read().strip())
@@ -77,17 +83,6 @@ def get_device_id():
                 parts.append(serial)
         except Exception:
             pass
-    # MAC address — always include as additional entropy
-    try:
-        for iface in sorted(os.listdir("/sys/class/net/")):
-            if iface == "lo":
-                continue
-            addr = open(f"/sys/class/net/{iface}/address").read().strip()
-            if addr and addr != "00:00:00:00:00:00":
-                parts.append(addr)
-                break
-    except Exception:
-        pass
     if not parts:
         return None
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:32]
