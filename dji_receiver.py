@@ -205,7 +205,7 @@ def parse_new_fw_line(line: str) -> dict:
 
     parts = line.split(',')
     if len(parts) < 14:
-        logging.debug(f"New FW line too few fields ({len(parts)}): {line[:80]}")
+        logging.warning(f"[NewFW] Dropped: only {len(parts)} fields in: {line[:80]}")
         return {}
 
     try:
@@ -234,7 +234,7 @@ def parse_new_fw_line(line: str) -> dict:
         vertical_speed = speed_u / 100.0
 
     except (ValueError, IndexError) as e:
-        logging.debug(f"New FW parse error: {e} in line: {line[:80]}")
+        logging.warning(f"[NewFW] Dropped: parse error {e} in: {line[:80]}")
         return {}
 
     # Parse field4 which always has parenthesized data:
@@ -582,8 +582,8 @@ def new_fw_connection_handler(conn: socket.socket, addr, data_queue: queue.Queue
                     parsed_data = parse_new_fw_line(line)
                     if parsed_data:
                         data_queue.put(parsed_data)
-                        logging.debug(f"[NewFW] Parsed: {parsed_data.get('serial_number')} "
-                                      f"freq={parsed_data.get('freq')} rssi={parsed_data.get('rssi')}")
+                        logging.info(f"[NewFW] Parsed: {parsed_data.get('serial_number')} "
+                                     f"freq={parsed_data.get('freq')} rssi={parsed_data.get('rssi')}")
 
     except socket.timeout:
         logging.warning(f"[NewFW] Connection from {addr} timed out (no data for 90s)")
