@@ -45,7 +45,7 @@ ANTSDR_IP = os.getenv("ANTSDR_IP", "172.31.100.2")
 ANTSDR_PORT = int(os.getenv("ANTSDR_PORT", "41030"))
 LISTEN_IP = "0.0.0.0"
 LISTEN_PORT = int(os.getenv("ANTSDR_LISTEN_PORT", "52002"))
-UDP_LISTEN_PORT = int(os.getenv("ANTSDR_UDP_LISTEN_PORT", "52005"))
+UDP_LISTEN_PORT = int(os.getenv("ANTSDR_UDP_LISTEN_PORT", "52002"))
 ZMQ_PUB_IP = "127.0.0.1"
 ZMQ_PUB_PORT = 4221  # Port to serve DJI receiver data
 

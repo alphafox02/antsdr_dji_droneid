@@ -99,13 +99,27 @@ Use `--mode legacy` to connect to old firmware on port 41030, or `--mode dual` f
 --mode MODE          legacy, new, or dual (default: new)
 --antsdr-ip IP       AntSDR IP for legacy mode (default: 172.31.100.2)
 --antsdr-port PORT   AntSDR port for legacy mode (default: 41030)
---listen-port PORT   Listen port for new firmware (default: 52002)
+--listen-port PORT   TCP listen port for new firmware (default: 52002)
+--udp-port PORT      UDP listen port (default: 52002, set 0 to disable)
 ```
 
 **Environment variables** (override defaults):
 - `ANTSDR_IP` — AntSDR IP for legacy mode
 - `ANTSDR_PORT` — AntSDR port for legacy mode
-- `ANTSDR_LISTEN_PORT` — Listen port for new firmware
+- `ANTSDR_LISTEN_PORT` — TCP listen port for new firmware
+- `ANTSDR_UDP_LISTEN_PORT` — UDP listen port
+
+### Ports used
+
+| Port  | Protocol | Direction      | Purpose |
+|-------|----------|----------------|---------|
+| 41030 | TCP      | inbound (legacy) | Connect to legacy firmware AntSDR |
+| 52002 | TCP      | inbound (new)    | Accept new-firmware AntSDR connections |
+| 52002 | UDP      | inbound          | Receive forwarded frames (alternative transport) |
+| 4221  | ZMQ TCP  | outbound (XPUB)  | Publish parsed drone data to subscribers |
+| 4225  | ZMQ TCP  | inbound (SUB)    | Subscribe to WarDragon monitor for sensor GPS |
+
+TCP and UDP can share port `52002` — the kernel keeps protocols separate.
 
 ## Integration
 
