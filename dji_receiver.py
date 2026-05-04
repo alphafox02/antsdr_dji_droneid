@@ -45,6 +45,7 @@ ANTSDR_IP = os.getenv("ANTSDR_IP", "172.31.100.2")
 ANTSDR_PORT = int(os.getenv("ANTSDR_PORT", "41030"))
 LISTEN_IP = "0.0.0.0"
 LISTEN_PORT = int(os.getenv("ANTSDR_LISTEN_PORT", "52002"))
+UDP_LISTEN_PORT = int(os.getenv("ANTSDR_UDP_LISTEN_PORT", "52005"))
 ZMQ_PUB_IP = "127.0.0.1"
 ZMQ_PUB_PORT = 4221  # Port to serve DJI receiver data
 
@@ -77,7 +78,9 @@ def parse_args():
     parser.add_argument("--antsdr-port", type=int, default=None,
                         help=f"AntSDR port for legacy mode (default: {ANTSDR_PORT})")
     parser.add_argument("--listen-port", type=int, default=None,
-                        help=f"Listen port for new firmware mode (default: {LISTEN_PORT})")
+                        help=f"TCP listen port for new firmware (default: {LISTEN_PORT})")
+    parser.add_argument("--udp-port", type=int, default=None,
+                        help=f"UDP listen port for DragonScope-bridged firmware (default: {UDP_LISTEN_PORT}; set 0 to disable)")
     parser.add_argument("--proxy", nargs='?', const="http://172.31.100.1",
                         default=None, metavar="URL",
                         help="Enable proxy lookups (default URL: http://172.31.100.1)")
@@ -622,6 +625,56 @@ def new_fw_tcp_server(data_queue: queue.Queue, listen_port: int):
 
 
 # ---------------------------------------------------------------------------
+# UDP listener (for DragonScope-bridged firmware)
+# ---------------------------------------------------------------------------
+#
+# Connectionless. The DragonScope firmware build runs a tcp_udp_bridge on
+# the AntSDR itself, which relays the firmware's TCP stream out as UDP.
+# Each datagram contains one or more dji_O,... CSV lines.
+
+def new_fw_udp_server(data_queue: queue.Queue, listen_port: int):
+    """UDP server for DragonScope-bridged AntSDR firmware."""
+    logging.info(f"[NewFW-UDP] Starting UDP server on {LISTEN_IP}:{listen_port}")
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.bind((LISTEN_IP, listen_port))
+    except Exception as e:
+        logging.error(f"[NewFW-UDP] bind {listen_port} failed: {e}")
+        return
+    logging.info(f"[NewFW-UDP] Listening on {LISTEN_IP}:{listen_port}")
+
+    # Per-source partial-line buffer — datagram boundaries do not always
+    # align with line boundaries when the bridge forwards firmware bursts.
+    bufs = {}
+    while True:
+        try:
+            data, addr = sock.recvfrom(8192)
+        except Exception as e:
+            logging.error(f"[NewFW-UDP] recv error: {e}")
+            time.sleep(1)
+            continue
+        if not data:
+            continue
+
+        text = data.decode('utf-8', errors='replace')
+        prev = bufs.get(addr, "")
+        buf = prev + text
+
+        while '\n' in buf:
+            line, buf = buf.split('\n', 1)
+            line = line.strip()
+            if not line or line == '=':
+                continue
+            if line.startswith('dji_O,'):
+                parsed_data = parse_new_fw_line(line)
+                if parsed_data:
+                    data_queue.put(parsed_data)
+                    logging.info(f"[NewFW-UDP] Parsed: {parsed_data.get('serial_number')} "
+                                 f"freq={parsed_data.get('freq')} rssi={parsed_data.get('rssi')}")
+        bufs[addr] = buf
+
+
+# ---------------------------------------------------------------------------
 # Main publisher loop
 # ---------------------------------------------------------------------------
 
@@ -634,6 +687,7 @@ def main():
     antsdr_ip = args.antsdr_ip or ANTSDR_IP
     antsdr_port = args.antsdr_port or ANTSDR_PORT
     listen_port = args.listen_port or LISTEN_PORT
+    udp_port = UDP_LISTEN_PORT if args.udp_port is None else args.udp_port
     PROXY_URL = args.proxy
     if PROXY_URL:
         logging.info(f"Proxy enabled: {PROXY_URL}")
@@ -667,7 +721,15 @@ def main():
                                  args=(data_queue, listen_port),
                                  daemon=True)
         t_new.start()
-        logging.info(f"[NewFW] Thread started <- listening on {listen_port}")
+        logging.info(f"[NewFW] TCP thread started <- listening on {listen_port}")
+
+        # UDP listener (for DragonScope-bridged firmware). 0 disables.
+        if udp_port and udp_port > 0:
+            t_udp = threading.Thread(target=new_fw_udp_server,
+                                     args=(data_queue, udp_port),
+                                     daemon=True)
+            t_udp.start()
+            logging.info(f"[NewFW-UDP] Thread started <- listening on {udp_port}")
 
     # Main loop: consume queue, poll GPS, publish ZMQ
     logging.info(f"Running in '{args.mode}' mode. Waiting for drone data...")
