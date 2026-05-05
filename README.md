@@ -167,6 +167,66 @@ Position data is not available from the receiver alone for O4 drones.
 
 **Important:** DJI drones only broadcast DroneID when motors are spinning. Power-on alone only activates the OcuSync control link.
 
+## DragonScope Firmware Setup
+
+The DragonScope firmware (`build_sdimg_drone_o4_dragonscope.zip`, provided
+to kit customers) installs on the AntSDR the same way as the public O4
+firmware in this repo: extract the zip contents to the SD card root,
+insert into the AntSDR with the boot switch in **SD mode**, and power on.
+
+Two differences from the public firmware are visible to operators:
+
+1. **First-boot env auto-configuration.** The DragonScope firmware
+   sets all required `fw_setenv` variables on first boot, so the
+   `tio` / serial-console setup steps in
+   [AntSDR Configuration](#2-antsdr-configuration-new-firmware) are
+   skipped. SSH access is available immediately after the first boot
+   completes (default: `ssh root@172.31.100.2`, password `1`).
+
+2. **UDP transport for detections.** Decoded drone frames are sent to
+   the WarDragon over UDP at `${udp_dest_ip}:${udp_dest_port}`
+   (default `172.31.100.1:52002`). `dji_receiver.py` listens on both
+   TCP and UDP 52002 by default, so the same receiver works with
+   either firmware — no flags or code changes.
+
+### Default Environment Variables
+
+| Variable          | DragonScope default | Public firmware default | Purpose |
+|-------------------|--------------------:|------------------------:|---------|
+| `ipaddr_eth`      | `172.31.100.2`      | _unset_ — set manually  | AntSDR IP |
+| `tcp_serverip`    | `127.0.0.1`         | _unset_ — set manually  | Legacy TCP destination (unused on kit) |
+| `tcp_serverport`  | `52002`             | _unset_ — set manually  | Legacy TCP port (unused on kit) |
+| `udp_dest_ip`     | `172.31.100.1`      | _n/a_                   | WarDragon IP for telemetry |
+| `udp_dest_port`   | `52002`             | _n/a_                   | UDP port (matches `dji_receiver`) |
+| `gain_mode`       | `fast_attack`       | _unset_ — set manually  | AD9361 AGC mode |
+| `heart_beate_time`| `30`                | _unset_ — set manually  | Heartbeat interval |
+| `api_host`        | `172.31.100.1`      | _unset_ — set manually  | DragonScope proxy host (WarDragon) |
+| `request_time`    | `1`                 | _unset_ — set manually  | O4 telemetry refresh (seconds) |
+| `auth_secret`     | `placeholder`       | _unset_ — set manually  | Required-fill |
+| `token_secret`    | `placeholder`       | _unset_ — set manually  | Required-fill |
+| `device_serial`   | `dragonsdr`         | _unset_ — set manually  | Device identifier |
+| `device_mode`     | `auto`              | _unset_ — set manually  | Frequency mode (5.8 GHz hop) |
+
+To verify the values that were set, SSH in and run:
+
+```bash
+fw_printenv ipaddr_eth tcp_serverip tcp_serverport udp_dest_ip udp_dest_port \
+            gain_mode heart_beate_time api_host request_time \
+            auth_secret token_secret device_serial device_mode
+```
+
+To override any of these after first boot, use `fw_setenv`:
+
+```bash
+fw_setenv udp_dest_ip 192.168.1.50
+fw_setenv ipaddr_eth 192.168.1.10
+reboot
+```
+
+The first-boot init only runs once per device (marked by
+`/mnt/jffs2/.dragonscope_initialized_v2`), so manual customization
+persists across reboots.
+
 ## DragonScope (O4 Position Data)
 
 DragonScope provides full O4 telemetry — serial number, drone GPS, pilot position, home point, altitude, and speed. When configured, O4 drones appear in dji_receiver with the same data as O2/O3.
