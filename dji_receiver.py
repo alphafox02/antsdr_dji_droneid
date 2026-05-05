@@ -303,7 +303,8 @@ def parse_new_fw_line(line: str) -> dict:
     else:
         # O2/O3 decoded drone: field5 is the serial, field4 name is the model
         serial_number = field5 if len(field5.strip()) >= 5 else ALERT_ID
-        device_type = f4_name if f4_name else "DJI Drone"
+        base_name = f4_name if f4_name else "DJI Drone"
+        device_type = f"{base_name} (O{protocol})" if protocol else base_name
 
     # Apply same validation as legacy parser
     if not (-90.0 <= drone_lat <= 90.0) or not (-180.0 <= drone_lon <= 180.0):
