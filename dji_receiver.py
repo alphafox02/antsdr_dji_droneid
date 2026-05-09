@@ -182,7 +182,8 @@ def parse_data_1(data: bytes) -> dict:
             "rssi": rssi,
             "home_lat": home_lat,
             "home_lon": home_lon,
-            "freq": freq
+            "freq": freq,
+            "transport": "OcuSync"
         }
 
     except (UnicodeDecodeError, struct.error) as e:
@@ -321,6 +322,8 @@ def parse_new_fw_line(line: str) -> dict:
     if horizontal_speed > MAX_HORIZONTAL_SPEED:
         horizontal_speed = 0.0
 
+    transport = f"OcuSync-O{protocol}" if protocol in ("2", "3", "4") else "OcuSync"
+
     return {
         "serial_number": serial_number,
         "device_type": device_type,
@@ -335,7 +338,8 @@ def parse_new_fw_line(line: str) -> dict:
         "rssi": rssi,
         "home_lat": home_lat,
         "home_lon": home_lon,
-        "freq": freq
+        "freq": freq,
+        "transport": transport
     }
 
 
@@ -457,7 +461,8 @@ def format_as_zmq_json(parsed_data: dict,
             "id_type": "Serial Number (ANSI/CTA-2063-A)",
             "id": basic_id_value,
             "description": parsed_data.get("device_type", "DJI Drone"),
-            "RSSI": parsed_data.get("rssi", None)
+            "RSSI": parsed_data.get("rssi", None),
+            "transport": parsed_data.get("transport", "OcuSync")
         }
     }
     message_list.append(basic_id_message)
