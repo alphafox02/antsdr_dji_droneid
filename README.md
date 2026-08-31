@@ -1,5 +1,15 @@
 # ANTSDR E200 DJI DroneID Receiver
 
+## A note
+
+I built and maintain the open-source components in this repository. The WarDragon Pro and Elite commercial kits include additional in-house capabilities that are not detailed here and are not covered by the license of this repository.
+
+For production evaluation or procurement, please contact [cemaxecuter.com](https://cemaxecuter.com). The open-source work in this repository remains open, and contributions are welcome.
+
+— Aaron
+
+---
+
 Detects DJI drones using the ANTSDR E200 SDR and publishes DroneID data over ZMQ for integration with [DroneID](https://github.com/alphafox02/DroneID), [DragonSync](https://github.com/alphafox02/DragonSync), Kismet, and TAK/CoT systems.
 
 Supports both legacy and new AntSDR firmware, including **O4 encrypted drone detection** (DJI Mini 5, etc.).
