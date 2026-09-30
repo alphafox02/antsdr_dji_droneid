@@ -1,3 +1,5 @@
+# New updates will be maintained here https://github.com/alphafox02/dragonsdr_dji_droneid
+
 # ANTSDR E200 DJI DroneID Receiver
 
 ## A note
